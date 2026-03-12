@@ -8,6 +8,8 @@ st.title("Cadastrar Produto")
 codigo = st.text_input("Código do produto")
 descricao = st.text_input("Descrição")
 categoria = st.text_input("Categoria")
+fornecedor = st.text_input("Fornecedor")
+valor_unitario = st.number_input("Valor unitário", min_value=0.0, format="%.2f")
 estoque = st.number_input("Quantidade inicial", min_value=0)
 data = st.date_input("Data da última reposição", value=date.today())
 imagem = st.file_uploader("Imagem do produto")
@@ -29,9 +31,9 @@ if st.button("Cadastrar produto"):
     cursor = conn.cursor()
 
     cursor.execute("""
-    INSERT INTO produtos (codigo, descricao, categoria, imagem, estoque, data_reposicao)
-    VALUES (?, ?, ?, ?, ?, ?)
-                   """, (codigo, descricao, categoria, nome_imagem, estoque, data))
+    INSERT INTO produtos (codigo, descricao, categoria, fornecedor, valor_unitario, imagem, estoque, data_reposicao)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   """, (codigo, descricao, categoria, fornecedor, valor_unitario, nome_imagem, estoque, data))
     
     conn.commit()
     conn.close()

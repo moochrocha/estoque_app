@@ -11,11 +11,14 @@ CREATE TABLE IF NOT EXISTS produtos (
                    codigo TEXT UNIQUE,
                    descricao TEXT,
                    categoria TEXT,
+                   fornecedor TEXT,
                    imagem TEXT,
                    estoque INTEGER,
+                   valor_unitario REAL,
                    data_reposicao DATE
                    )
                    """)
+    
     cursor.execute("""
 CREATE TABLE IF NOT EXISTS movimentacoes (
                    id INTEGER PRIMARY KEY AUTOINCREMENT,

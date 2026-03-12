@@ -6,14 +6,14 @@ st.title("Estoque de Produtos")
 
 conn = get_connection()
 
-df = pd.read_sql("SELECT id, imagem, codigo, descricao, categoria, estoque, data_reposicao FROM produtos", conn)
+df = pd.read_sql("SELECT id, imagem, codigo, descricao, categoria, fornecedor, estoque, data_reposicao FROM produtos", conn)
 
 # -------
 # FILTROS
 # -------
 st.subheader("Filtros")
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     busca_descricao = st.text_input("Busca por descrição")
@@ -24,6 +24,10 @@ with col2:
 with col3:
     categorias = ["Todas"] + sorted(df["categoria"].dropna().unique().tolist())
     filtro_categoria = st.selectbox("Categoria", categorias)
+
+with col4:
+    fornecedores = ["Todos"] + sorted(df["fornecedor"].dropna().unique().tolist())
+    filtro_fornecedor = st.selectbox("Fornecedor", fornecedores)
 
 # -------
 # APLICAR FILTROS
@@ -45,6 +49,11 @@ if filtro_categoria != "Todas":
         df_filtrado["categoria"] == filtro_categoria
     ]
 
+if filtro_fornecedor != "Todos":
+    df_filtrado = df_filtrado[
+        df_filtrado["fornecedor"] == filtro_fornecedor
+    ]
+
 # ---------------
 # EXIBIR PRODUTOS
 # ---------------
@@ -62,7 +71,9 @@ for _, row in df_filtrado.iterrows():
         st.write(f"**Código**: {row['codigo']}")
         st.write(f"**Descrição**: {row['descricao']}")
         st.write(f"**Categoria**: {row['categoria']}")
+        st.write(f"**Fornecedor**: {row['fornecedor']}")
         st.write(f"**Estoque**: {row['estoque']}")
+        st.write(f"**Data da Última Reposição**: {row['data_reposicao']}")
         st.write("---")
 
 conn.close()
