@@ -9,7 +9,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("📦 Sistema de Gestão de Estoque")
+st.title("📦Gestão de Estoque Inteligente")
 
 st.write("Aplicação para gerenciamento de estoque para e-commerce.")
 

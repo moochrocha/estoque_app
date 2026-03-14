@@ -8,7 +8,7 @@ def create_tables():
     cursor.execute("""
 CREATE TABLE IF NOT EXISTS produtos (
                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                   codigo TEXT UNIQUE,
+                   codigo TEXT UNIQUE NOT NULL,
                    descricao TEXT,
                    categoria TEXT,
                    fornecedor TEXT,

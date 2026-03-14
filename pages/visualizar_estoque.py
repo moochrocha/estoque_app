@@ -129,7 +129,6 @@ else:
         with colunas[idx % 3]:
 
             with st.container():
-                st.markdown('<div class="card-produto">', unsafe_allow_html=True)
 
                 if row["imagem"]:
                     st.image(f"images/{row['imagem']}", use_container_width=True)
