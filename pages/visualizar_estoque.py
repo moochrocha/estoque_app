@@ -17,10 +17,10 @@ st.subheader("Filtros")
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    busca_descricao = st.text_input("Busca por descrição")
+    busca_descricao = st.text_input("Busca por descrição", placeholder="Descrição desejada")
 
 with col2:
-    busca_codigo = st.text_input("Busca por código")
+    busca_codigo = st.text_input("Busca por código", placeholder="Código desejado")
 
 with col3:
     categorias = ["Todas"] + sorted(df["categoria"].dropna().unique().tolist())

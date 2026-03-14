@@ -111,7 +111,7 @@ if cadastrar:
         
         conn.commit()
         st.success("✅ Produto cadastrado com sucesso!")
-        st.rerun()
+        #st.rerun()
 
     except sqlite3.IntegrityError:
         st.error("Já existe um produto cadastrado com esse código. Utilize um código diferente.")

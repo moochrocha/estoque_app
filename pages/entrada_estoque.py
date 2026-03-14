@@ -14,7 +14,9 @@ lista = {p["codigo"]: p["id"] for p in produtos}
 
 codigo = st.selectbox("Produto", list(lista.keys()))
 
-quantidade = st.number_input("Quantidade adicionada", min_value=1)
+quantidade = st.number_input("Quantidade adicionada")
+
+data = st.date_input("Data da última reposição", value=date.today())
 
 if st.button("Registrar entrada"):
 
@@ -35,10 +37,16 @@ if st.button("Registrar entrada"):
                        """, (novo_estoque, produto["id"]))
         
         cursor.execute("""
+        UPDATE produtos
+        SET data_reposicao = ?
+        WHERE id = ?               
+                       """, (data, produto["id"]))
+        
+        cursor.execute("""
         INSERT INTO movimentacoes
         (produto_id, tipo, quantidade, data)
         VALUES(?, ?, ?, ?)
-                       """, (produto["id"], "entrada", quantidade, date.today()))
+                       """, (produto["id"], "entrada", quantidade, data))
         
         conn.commit()
 
