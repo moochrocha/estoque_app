@@ -5,9 +5,16 @@ from database.connection import get_connection
 from datetime import date
 import os
 
-st.set_page_config(layout="wide")
+st.set_page_config(
+    page_title="Cadastrar produto",
+    layout="wide")
 
 st.title("📋 Cadastrar Produto")
+# ------------
+# FUNÇÕES AUX
+# ------------
+def normalizar_texto(texto):
+    return " ".join(texto.strip().split())
 
 # ------
 # ESTILO
@@ -15,13 +22,11 @@ st.title("📋 Cadastrar Produto")
 
 st.markdown("""
 <style>
-
 /* cartões dos inputs */
 div[data-testid="stVerticalBlock"] > div:has(div.stTextInput),
 div[data-testid="stVerticalBlock"] > div:has(div.stNumberInput),
 div[data-testid="stVerticalBlock"] > div:has(div.stDateInput) {
 
-    
     border-radius: 15px;
     padding: 20px;
     background-color: rgba(255,255,255,0.02);
@@ -31,7 +36,7 @@ div[data-testid="stVerticalBlock"] > div:has(div.stDateInput) {
 """, unsafe_allow_html=True)
 
 # -----
-# FORMS
+# FORM
 # -----
 
 with st.form("form_cadastro_produto"):
@@ -54,7 +59,7 @@ with st.form("form_cadastro_produto"):
         data = st.date_input("Data da última reposição", value=date.today())
 
     st.subheader("🖼️ Imagem do produto")    
-    imagem = st.file_uploader("Upload da imagem")
+    imagem = st.file_uploader("Upload da imagem", type=["png", "jpg", "jpeg", "webp"])
 
     if imagem is not None:
         st.image(imagem, width=250)
@@ -75,8 +80,27 @@ with st.form("form_cadastro_produto"):
 
 if cadastrar:
 
-    if not codigo.strip():
+    # padronização
+    codigo = normalizar_texto(codigo).upper()
+    descricao = normalizar_texto(descricao)
+    categoria = normalizar_texto(categoria).title()
+    fornecedor = normalizar_texto(fornecedor).title()
+
+    # validações
+    if not codigo:
         st.error("O código do produto é obrigatório.")
+        st.stop()
+
+    if not descricao:
+        st.error("A descrição do produto é obrigatória.")
+        st.stop()
+
+    if not categoria:
+        st.error("A categoria do produto é obrigatória.")
+        st.stop()
+
+    if not fornecedor:
+        st.error("O fornecedor do produto é obrigatório.")
         st.stop()
 
     os.makedirs("images", exist_ok=True)

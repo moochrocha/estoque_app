@@ -3,6 +3,11 @@ import pandas as pd
 from database.connection import get_connection
 from datetime import date
 
+st.set_page_config(
+    page_title="Movimentação Estoque",
+    layout="wide"
+)
+
 st.title("📦 Movimentação de Estoque")
 
 # ------
