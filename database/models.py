@@ -30,5 +30,17 @@ CREATE TABLE IF NOT EXISTS movimentacoes (
                    )
                    """)
     
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS devolucoes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    produto_id INTEGER NOT NULL,
+                    quantidade INTEGER,
+                    motivo TEXT,
+                    elegivel_venda INTEGER,
+                    data DATE,
+                    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                   )
+                   """)
+    
     conn.commit()
     conn.close()
