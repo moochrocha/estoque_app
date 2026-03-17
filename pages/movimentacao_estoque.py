@@ -42,9 +42,21 @@ cursor = conn.cursor()
 
 cursor.execute("SELECT id, codigo, estoque FROM produtos")
 produtos = cursor.fetchall()
+conn.close()
 
 lista = {p["codigo"]: p for p in produtos}
 
+# ---------------------
+# VALIDAÇÃO SEM PRODUTO
+# ---------------------
+if not lista:
+    st.warning("Nenhum produto cadastrado no sistema.")
+    st.info("Cadastre pelo menos um produto para registrar movimentações de estoque.")
+    st.stop()
+
+# ----
+# FROM
+# ----
 with st.form("movimentacao_estoque"):
 
     col1, col2 = st.columns(2)
@@ -56,13 +68,7 @@ with st.form("movimentacao_estoque"):
 
         produto = lista[codigo]
         produto_id = produto["id"]
-
-        cursor.execute(
-            "SELECT estoque FROM produtos WHERE id = ?",
-            (produto_id,)
-        )
-
-        estoque_atual = cursor.fetchone()["estoque"]
+        estoque_atual = produto["estoque"]
 
         st.metric(
             label="Estoque atual",
@@ -74,9 +80,9 @@ with st.form("movimentacao_estoque"):
 
         tipo = st.selectbox("Tipo de movimentação", ["Entrada", "Saída"])
 
-        quantidade = st.number_input("Quantidade", min_value=1)
+        quantidade = st.number_input("Quantidade", min_value=1, step=1)
 
-        data = st.date_input("Data da movimentação", value=date.today())
+        data_movimentacao = st.date_input("Data da movimentação", value=date.today())
 
         motivo = st.selectbox(
             "Motivo da movimentação",
@@ -99,14 +105,27 @@ with st.form("movimentacao_estoque"):
         use_container_width=True
     )
 
+# ---------------------
+# REGISTRAR MOVIMENTAÇÃO
+# ---------------------
 if registrar:
+
+    conn = get_connection()
+    cursor = conn.cursor()
 
     cursor.execute(
         "SELECT estoque FROM produtos WHERE id = ?",
-        (produto["id"],)
+        (produto_id,)
     )
 
-    estoque_atual = cursor.fetchone()["estoque"]
+    resultado = cursor.fetchone()
+    
+    if not resultado:
+        conn.close()
+        st.error("Produto não encontrado.")
+        st.stop()
+
+    estoque_atual = resultado["estoque"]
 
     if tipo == "Entrada":
         novo_estoque = estoque_atual + quantidade
@@ -119,11 +138,8 @@ if registrar:
         novo_estoque = estoque_atual - quantidade
         tipo_db = "saida"
 
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    if observacao:
-        observacao_final = f"{motivo} - {observacao}"
+    if observacao.strip():
+        observacao_final = f"{motivo} - {observacao.strip()}"
     else:
         observacao_final = motivo
 
@@ -131,13 +147,13 @@ if registrar:
     UPDATE produtos
     SET estoque = ?, data_reposicao = ?
     WHERE id = ?
-                   """, (novo_estoque, data, produto["id"]))
+                   """, (novo_estoque, data_movimentacao, produto_id))
     
     cursor.execute("""
     INSERT INTO movimentacoes
     (produto_id, tipo, quantidade, data, observacoes)
     VALUES (?, ?, ?, ?, ?)
-                   """, (produto["id"], tipo_db, quantidade, data, observacao_final))
+                   """, (produto_id, tipo_db, quantidade, data_movimentacao, observacao_final))
     
     conn.commit()
     conn.close()
@@ -145,9 +161,12 @@ if registrar:
     st.success("✅ Movimentação registrada com sucesso!")
     st.rerun()
 
+# ---------
+# HISTÓRICO
+# ---------
 st.divider()
-
 st.subheader("📜 Últimas movimentações")
+
 conn = get_connection()
 cursor = conn.cursor()
 
@@ -160,6 +179,7 @@ LIMIT 10
                 """, (produto_id,))
 
 movimentacoes = cursor.fetchall()
+conn.close()
 
 if movimentacoes:
     dados = []

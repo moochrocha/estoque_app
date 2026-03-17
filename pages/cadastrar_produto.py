@@ -1,6 +1,7 @@
 import streamlit as st
 import sqlite3
 import uuid
+import unicodedata
 from database.connection import get_connection
 from datetime import date
 import os
@@ -15,6 +16,12 @@ st.title("📋 Cadastrar Produto")
 # ------------
 def normalizar_texto(texto):
     return " ".join(texto.strip().split())
+
+def remover_acentos(texto):
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", texto)
+        if not unicodedata.combining(c)
+    )
 
 # ------
 # ESTILO
@@ -83,8 +90,8 @@ if cadastrar:
     # padronização
     codigo = normalizar_texto(codigo).upper()
     descricao = normalizar_texto(descricao)
-    categoria = normalizar_texto(categoria).title()
-    fornecedor = normalizar_texto(fornecedor).title()
+    categoria = remover_acentos(normalizar_texto(categoria)).title()
+    fornecedor = remover_acentos(normalizar_texto(fornecedor)).title()
 
     # validações
     if not codigo:

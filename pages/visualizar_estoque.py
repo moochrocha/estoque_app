@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
 from PIL import Image
+import unicodedata
 
 import streamlit as st
 import sqlite3
@@ -56,6 +57,16 @@ def carregar_produtos():
     """, conn)
     conn.close()
     return df_local
+
+def normalizar_texto(texto):
+    return " ".join(texto.strip().split())
+
+def remover_acentos(texto):
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", texto)
+        if not unicodedata.combining(c)
+    )
+
 
 # -----------------------
 # CSS
@@ -348,6 +359,30 @@ if produto_editar_id is not None:
             st.rerun()
         
         if salvar:
+
+            # padronização
+            novo_codigo = normalizar_texto(novo_codigo).upper()
+            nova_descricao = normalizar_texto(nova_descricao)
+            nova_categoria = remover_acentos(normalizar_texto(nova_categoria)).title()
+            novo_fornecedor = remover_acentos(normalizar_texto(novo_fornecedor)).title()
+
+            # validações
+            if not novo_codigo:
+                st.error("O código do produto é obrigatório.")
+                st.stop()
+
+            if not nova_descricao:
+                st.error("A descrição do produto é obrigátoria.")
+                st.stop()
+
+            if not nova_categoria:
+                st.error("A categoria do produto é obrigatória.")
+                st.stop()
+
+            if not novo_fornecedor:
+                st.error("O fornecedor do produto é obrigatório.")
+                st.stop()
+                
             nome_imagem = produto["imagem"]
 
             if nova_imagem is not None:
@@ -447,5 +482,5 @@ if produto_excluir_id is not None:
                 st.rerun()
 
     else:
-        st.session_state["produt_excluir_id"] = None
+        st.session_state["produto_excluir_id"] = None
         st.warning("Produto não encontrado para exclusão.")

@@ -36,6 +36,10 @@ CREATE TABLE IF NOT EXISTS movimentacoes (
                     produto_id INTEGER NOT NULL,
                     quantidade INTEGER,
                     motivo TEXT,
+                    observacoes TEXT,
+                    plataforma TEXT,
+                    id_solicitacao TEXT,
+                    link_solicitacao TEXT,
                     elegivel_venda INTEGER,
                     data DATE,
                     criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
