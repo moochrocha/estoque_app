@@ -262,7 +262,7 @@ if devolucoes:
                     st.session_state["devolucao_excluir_id"] = int(d["id"])
                     st.session_state["devolucao_editar_id"] = None
 else:
-    st.info("Nenhum devolução registrada.")
+    st.info("Nenhuma devolução registrada.")
 
 # ---------------------
 # EXCLUSÃO DE DEVOLUÇÃO
@@ -358,3 +358,158 @@ if devolucao_excluir_id is not None:
     else:
         st.session_state["devolucao_excluir_id"] = None
         st.warning("Devolução não encontrada para exclusão.")
+
+# -------------------
+# EDIÇÃO DE DEVOLUÇÃO
+# -------------------
+devolucao_editar_id = st.session_state.get("devolucao_editar_id")
+
+if devolucao_editar_id is not None:
+    st.divider()
+    st.subheader("✏️ Editar devolução")
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT
+            id,
+            motivo,
+            observacoes,
+            plataforma,
+            id_solicitacao,
+            link_solicitacao,
+            data
+        FROM devolucoes
+        WHERE id = ?
+                """, (devolucao_editar_id,))
+    devolucao = cursor.fetchone()
+    conn.close()
+
+    if devolucao:
+        motivos_opcoes = [
+                    "Cliente desistiu",
+                    "Produto com defeito",
+                    "Produto danificado no transporte",
+                    "Erro no envio",
+                    "Outro"
+                ]
+        
+        plataformas_opcoes = [
+                    "Shopee",
+                    "Mercado Livre",
+                    "Amazon",
+                    "Magalu",
+                    "Tik Tok Shop",
+                    "Outro"
+                ]
+        
+        motivo_atual = devolucao["motivo"] if devolucao["motivo"] in motivos_opcoes else "Outro"
+        plataforma_atual = devolucao["plataforma"] if devolucao["plataforma"] in plataformas_opcoes else "Outro"
+
+        try:
+            data_padrao = datetime.strptime(str(devolucao["data"]), "%Y-%m-%d").date()
+        except Exception:
+            data_padrao = date.today()
+
+        with st.form("form_editar_devolucao"):
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                motivo_edit = st.selectbox(
+                    "Motivo da devolução",
+                    motivos_opcoes,
+                    index=motivos_opcoes.index(motivo_atual)
+                )
+
+                observacoes_edit = st.text_input(
+                    "Observações",
+                    value= devolucao["observacoes"] or "",
+                    placeholder="Detalhes adicionais"
+                )
+
+                plataforma_edit = st.selectbox(
+                    "Plataforma",
+                    plataformas_opcoes,
+                    index=plataformas_opcoes.index(plataforma_atual)
+                )
+
+            with col2:
+                id_solicitacao_edit = st.text_input(
+                    "ID da solicitação",
+                    value=devolucao["id_solicitacao"] or "",
+                    placeholder="ABC123"
+                )
+
+                link_solicitacao_edit = st.text_input(
+                    "Link da solicitação",
+                    value=devolucao["link_solicitacao"] or "",
+                    placeholder="https://..."
+                )
+
+                data_edit = st.date_input(
+                    "Data da devolução",
+                    value=data_padrao
+                )
+
+            col_btn1, col_btn2 = st.columns(2)
+
+            salvar_edicao = col_btn1.form_submit_button(
+                "💾 Salvar alterações",
+                use_container_width=True
+            )
+
+            cancelar_edicao = col_btn2.form_submit_button(
+                "Cancelar edição",
+                use_container_width=True
+            )
+
+        if cancelar_edicao:
+            st.session_state["devolucao_editar_id"] = None
+            st.rerun()
+
+        if salvar_edicao:
+            # padronização
+            observacoes_edit = normalizar_texto(observacoes_edit)
+            id_solicitacao_edit = normalizar_texto(id_solicitacao_edit).upper()
+            link_solicitacao_edit = normalizar_texto(link_solicitacao_edit)
+
+            # validação link
+            if link_solicitacao_edit and not (
+                link_solicitacao_edit.startswith("http://") or link_solicitacao_edit.startswith("https://")
+            ):
+                st.error("O link da solicitação deve começar com http:// ou https://")
+                st.stop()
+        
+            conn = get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                UPDATE devolucoes
+                SET
+                    motivo = ?,
+                    observacoes = ?,
+                    plataforma = ?,
+                    id_solicitacao = ?,
+                    link_solicitacao = ?,
+                    data = ?
+                WHERE id = ?
+                        """, (
+                            motivo_edit,
+                            observacoes_edit if observacoes_edit else None,
+                            plataforma_edit,
+                            id_solicitacao_edit if id_solicitacao_edit else None,
+                            link_solicitacao_edit if link_solicitacao_edit else None,
+                            data_edit,
+                            devolucao_editar_id
+                        ))
+            conn.commit()
+            conn.close()
+
+            st.success("✅ Devolução atualizada com sucesso!")
+            st.session_state["devolucao_editar_id"] = None
+            st.rerun()
+        
+    else:
+        st.session_state["devolucao_editar_id"] = None
+        st.warning("Devolução não encontrada para edição.")
