@@ -11,6 +11,7 @@ from services.estoque_service import get_estoques_por_produto
 
 st.set_page_config(
     page_title="Estoque de produtos",
+    page_icon="📦",
     layout="wide")
 
 st.title("📦 Estoque de Produtos")
@@ -68,6 +69,17 @@ def remover_acentos(texto):
         if not unicodedata.combining(c)
     )
 
+ORDEM_LOCAIS = [
+    "Estoque Local",
+    "Mercado Livre Full",
+    "Amazon FBA"
+]
+
+MAPA_LOCAIS = {
+    "Estoque Local": "Local",
+    "Mercado Livre Full": "ML FULL ⚡",
+    "Amazon FBA": "AMZ FBA"
+}
 
 # -----------------------
 # CSS
@@ -254,14 +266,20 @@ else:
                     unsafe_allow_html=True
                 )
 
-                st.markdown(
-                    '<div class="texto-card"><b>Distribuição po local:</b></div>',
-                    unsafe_allow_html=True
+                # st.markdown(
+                #     '<div class="texto-card"><b>Distribuição po local:</b></div>',
+                #     unsafe_allow_html=True
+                # )
+
+                estoques_locais_ordenados = sorted(
+                    estoques_locais,
+                    key=lambda x: ORDEM_LOCAIS.index(x["local_nome"]) if x["local_nome"] in ORDEM_LOCAIS else 999
                 )
 
-                for e in estoques_locais:
+                for e in estoques_locais_ordenados:
+                    nome_formatado = MAPA_LOCAIS.get(e["local_nome"], e["local_nome"])
                     st.markdown(
-                        f'<div class="texto-card">- <b>{e["local_nome"]}:</b> {e["quantidade"]}</div>',
+                        f'<div class="texto-card">• <b>{nome_formatado}:</b> {e["quantidade"]}</div>',
                         unsafe_allow_html=True
                     )
 

@@ -4,6 +4,7 @@ from datetime import date, datetime
 
 st.set_page_config(
     page_title="Devoluções",
+    page_icon="↩️",
     layout="wide"
 )
 

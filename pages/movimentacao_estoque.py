@@ -7,6 +7,7 @@ from services.estoque_service import recalcular_estoque_total, get_estoques_por_
 
 st.set_page_config(
     page_title="Movimentação Estoque",
+    page_icon="📦",
     layout="wide"
 )
 
@@ -39,6 +40,9 @@ div[data-testid="stVerticalBlock"] > div:has(div[data-baseweb="select"]) {
 </style>
 """, unsafe_allow_html=True)
 
+# --------------
+# CARREGAR DADOS
+# --------------
 conn = get_connection()
 cursor = conn.cursor()
 
@@ -58,71 +62,94 @@ if not produtos:
     st.info("Cadastre pelo menos um produto para registrar movimentações de estoque.")
     st.stop()
 
-lista_produtos = {p["codigo"]: p for p in produtos}
+lista_produtos = {p["codigo"]: p["id"] for p in produtos}
 lista_locais = {l["nome"]: l["id"] for l in locais}
+nomes_locais = sorted(lista_locais.keys())
+
+if "Estoque Local" in nomes_locais:
+    nomes_locais.remove("Estoque Local")
+    nomes_locais.insert(0, "Estoque Local")
 
 # ----
-# FROM
+# CAMPOS FORA DO FORM
 # ----
+col_top1, col_top2 = st.columns(2)
+
+with col_top1:
+    codigo = st.selectbox("Código do produto", list(lista_produtos.keys()))
+    produto_id = lista_produtos[codigo]
+
+with col_top2:
+    tipo = st.selectbox("Tipo movimentação", ["Entrada", "Saída", "Transferência"])
+
+
+
+# ----------------
+# SALDO DO PRODUTO
+# ----------------
+estoques = get_estoques_por_produto(produto_id)
+total = sum(e["quantidade"] for e in estoques)
+
+st.metric(
+    label="Estoque atual",
+    value=f"{total} unidades"
+)
+
+st.write("**Saldo por local:**")
+for e in estoques:
+    st.write(f"- {e['local_nome']}: {e['quantidade']}")
+
+    # ----------
+    # FORMULÁRIO
+    # ----------
 with st.form("movimentacao_estoque"):
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("📦 Produto")
-
-        codigo = st.selectbox("Código do produto", list(lista_produtos.keys()))
-        produto_id = lista_produtos[codigo]["id"]
-
-        estoques = get_estoques_por_produto(produto_id)
-        total = sum(e["quantidade"] for e in estoques)
-
-        st.metric(
-            label="Estoque atual",
-            value=f"{total} unidades"
-        )
-
-        st.write("**Saldo por local:**")
-        for e in estoques:
-            st.write(f"- {e['local_nome']}: {e['quantidade']}")
-
-    with col2:
-        st.subheader("📋 Movimentações")
-
-        tipo = st.selectbox("Tipo de movimentação", ["Entrada", "Saída", "Transferência"])
-
         quantidade = st.number_input("Quantidade", min_value=1, step=1)
-
         data_mov = st.date_input("Data da movimentação", value=date.today())
+    with col2:
+        motivo = st.selectbox(
+        "Motivo da movimentação",
+        [
+            "Reposição mercadoria",
+            "Venda",
+            "Produto Quebrado",
+            "Ajuste inventário",
+            "Outros"
+        ]
+        )
 
         observacao = st.text_input(
         "Observação",
         placeholder="Detalhes adicionais"
         )
-        
-        local_origem_nome = None
-        local_destino_nome = None
 
-        if tipo == "Entrada":
-            local_destino_nome = st.selectbox("Local de destino", list(lista_locais.keys()), key="destino")
-        elif tipo == "Saída":
-            local_origem_nome = st.selectbox("Local de origem", list(lista_locais.keys()), key="origem")
-        else:
-            local_origem_nome = st.selectbox("Local de origem", list(lista_locais.keys()), key="origem_transf")
-            destinos = [l for l in lista_locais.keys() if l != local_origem_nome]
-            local_destino_nome = st.selectbox("Local de destino", destinos, key="destino_transf")
+        
+    local_origem_nome = None
+    local_destino_nome = None
+
+    if tipo == "Entrada":
+        local_destino_nome = st.selectbox(
+            "Local de destino", 
+            nomes_locais, key="destino_entrada"
+            )
+    elif tipo == "Saída":
+        local_origem_nome = st.selectbox(
+            "Local de origem", 
+            nomes_locais, key="origem_saida"
+            )
+    elif tipo == "Transferência":
+        local_origem_nome = st.selectbox(
+            "Local de origem", 
+            nomes_locais, key="origem_transferencia"
+            )
+
+        local_destino_nome = st.selectbox(
+            "Local de destino", 
+            nomes_locais, key="destino_transferencia")
 
     registrar = st.form_submit_button("Registrar movimentação", use_container_width=True)
-
-    #     motivo = st.selectbox(
-    #         "Motivo da movimentação",
-    #         [
-    #             "Reposição mercadoria",
-    #             "Venda",
-    #             "Produto Quebrado",
-    #             "Ajuste inventário",
-    #             "Outros"
-    #         ]
-    #     )
 
 # ---------------------
 # REGISTRAR MOVIMENTAÇÃO
@@ -134,6 +161,11 @@ if registrar:
 
     local_origem_id = lista_locais[local_origem_nome] if local_origem_nome else None
     local_destino_id = lista_locais[local_destino_nome] if local_destino_nome else None
+
+    if observacao.strip():
+        observacao_final = f"{motivo} - {observacao.strip()}"
+    else:
+        observacao_final = motivo
     
     try:
 
@@ -173,7 +205,12 @@ if registrar:
             tipo_db = "saida"
 
         # transfêrencia
-        else: 
+        else:
+            if local_origem_id == local_destino_id:
+                conn.close()
+                st.error("Origem e destino não podem ser iguais.")
+                st.stop()
+
             cursor.execute("""
                 SELECT quantidade
                 FROM estoque_locais
@@ -192,14 +229,14 @@ if registrar:
                 INSERT OR IGNORE INTO estoque_locais (produto_id, local_id, quantidade)
                 VALUES (?, ?, 0)
                            """, (produto_id, local_destino_id))
-            # saída
+            # saída da origem
             cursor.execute("""
                 UPDATE estoque_locais
                 SET quantidade = quantidade - ?
                 WHERE produto_id = ? AND local_id = ?
                            """, (quantidade, produto_id, local_origem_id))
             
-            # entrada
+            # entrada no destino
             cursor.execute("""
                 UPDATE estoque_locais
                 SET quantidade = quantidade + ?
@@ -217,7 +254,7 @@ if registrar:
                            tipo_db,
                            quantidade,
                            data_mov,
-                           observacao if observacao else None,
+                           observacao_final,
                            local_origem_id,
                            local_destino_id
                        ))

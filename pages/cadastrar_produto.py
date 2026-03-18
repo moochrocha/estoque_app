@@ -9,6 +9,7 @@ import os
 
 st.set_page_config(
     page_title="Cadastrar produto",
+    page_icon="📋",
     layout="wide")
 
 st.title("📋 Cadastrar Produto")
