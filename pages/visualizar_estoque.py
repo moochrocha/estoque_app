@@ -266,11 +266,6 @@ else:
                     unsafe_allow_html=True
                 )
 
-                # st.markdown(
-                #     '<div class="texto-card"><b>Distribuição po local:</b></div>',
-                #     unsafe_allow_html=True
-                # )
-
                 estoques_locais_ordenados = sorted(
                     estoques_locais,
                     key=lambda x: ORDEM_LOCAIS.index(x["local_nome"]) if x["local_nome"] in ORDEM_LOCAIS else 999
