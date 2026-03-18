@@ -3,6 +3,7 @@ import sqlite3
 import uuid
 import unicodedata
 from database.connection import get_connection
+from services.estoque_service import criar_estoque_inicial_local
 from datetime import date
 import os
 
@@ -138,9 +139,23 @@ if cadastrar:
         cursor.execute("""
         INSERT INTO produtos (codigo, descricao, categoria, fornecedor, valor_unitario, imagem, estoque, data_reposicao)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (codigo, descricao, categoria, fornecedor, valor_unitario, nome_imagem, estoque, data))
+                    """, (
+                        codigo, 
+                        descricao, 
+                        categoria, 
+                        fornecedor, 
+                        valor_unitario, 
+                        nome_imagem, 
+                        0, 
+                        data
+                        ))
         
+        produto_id = cursor.lastrowid
         conn.commit()
+        conn.close()
+
+        # cria estoque inicial no local padrão
+        criar_estoque_inicial_local(produto_id, estoque, "Estoque Local")
         st.success("✅ Produto cadastrado com sucesso!")
         #st.rerun()
 
@@ -148,4 +163,7 @@ if cadastrar:
         st.error("Já existe um produto cadastrado com esse código. Utilize um código diferente.")
 
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except:
+            pass

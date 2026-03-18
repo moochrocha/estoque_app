@@ -3,8 +3,11 @@ from database.connection import get_connection
 def get_local_id_por_nome(nome_local):
     conn = get_connection()
     cursor = conn.cursor()
+
     cursor.execute("SELECT id FROM locais_estoque WHERE nome = ?", (nome_local,))
     local = cursor.fetchone()
+
+    conn.close()
     return local["id"] if local else None
 
 def criar_estoque_inicial_local(produto_id, quantidade, nome_local="Estoque Local"):
@@ -41,7 +44,9 @@ def recalcular_estoque_total(produto_id):
     FROM estoque_locais
     WHERE produto_id = ?
                    """, (produto_id,))
-    total = cursor.fetchone(["total"])
+    
+    resultado = cursor.fetchone()
+    total = resultado["total"] if resultado else 0
 
     cursor.execute("""
     UPDATE produtos
@@ -51,3 +56,23 @@ def recalcular_estoque_total(produto_id):
     
     conn.commit()
     conn.close()
+
+def get_estoques_por_produto(produto_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    SELECT
+        l.id AS local_id,
+        l.nome AS local_nome,
+        COALESCE(e.quantidade, 0) AS quantidade
+    FROM locais_estoque l
+    LEFT JOIN estoque_locais e
+            ON l.id = e.local_id AND e.produto_id = ?
+    WHERE l.ativo = 1
+    ORDER BY l.nome
+    """, (produto_id,))
+
+    dados = cursor.fetchall()
+    conn.close()
+    return dados

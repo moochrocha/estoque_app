@@ -7,6 +7,7 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from database.connection import get_connection
+from services.estoque_service import get_estoques_por_produto
 
 st.set_page_config(
     page_title="Estoque de produtos",
@@ -118,7 +119,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ----------
-# EDIÇÃO
+# ESTADO
 # ----------
 if "produto_editar_id" not in st.session_state:
     st.session_state["produto_editar_id"] = None
@@ -211,6 +212,8 @@ else:
         with colunas[idx % 3]:
             with st.container(border=True):
 
+                estoques_locais = get_estoques_por_produto(row["id"])
+
                 # imagem padronizada
                 if pd.notnull(row["imagem"]) and row["imagem"]:
                     caminho_img = os.path.join("images", row["imagem"])
@@ -247,9 +250,20 @@ else:
                     texto_estoque = f"Estoque disponível ({int(estoque)})"
 
                 st.markdown(
-                    f'<div class="texto-card"><b>Estoque:</b> <span class="{classe_estoque}">{texto_estoque}</span></div>',
+                    f'<div class="texto-card"><b>Estoque total::</b> <span class="{classe_estoque}">{texto_estoque}</span></div>',
                     unsafe_allow_html=True
                 )
+
+                st.markdown(
+                    '<div class="texto-card"><b>Distribuição po local:</b></div>',
+                    unsafe_allow_html=True
+                )
+
+                for e in estoques_locais:
+                    st.markdown(
+                        f'<div class="texto-card">- <b>{e["local_nome"]}:</b> {e["quantidade"]}</div>',
+                        unsafe_allow_html=True
+                    )
 
                 valor_unitario = row["valor_unitario"] if pd.notnull(row["valor_unitario"]) else 0
                 valor_total_item = valor_unitario * estoque
@@ -300,7 +314,6 @@ if produto_editar_id is not None:
             categoria,
             fornecedor,
             valor_unitario,
-            estoque,
             data_reposicao,
             imagem
         FROM produtos
@@ -327,12 +340,6 @@ if produto_editar_id is not None:
                     format="%.2f"
                 )
 
-                novo_estoque = st.number_input(
-                    "Estoque",
-                    min_value=0,
-                    value=int(produto["estoque"] or 0)
-                )
-
                 data_atual = produto["data_reposicao"]
 
                 try:
@@ -349,6 +356,8 @@ if produto_editar_id is not None:
                 "Alterar imagem do produto (opcional)",
                 type=["png", "jpg", "jpeg", "webp"]
             )
+
+            st.info("O estoque é controlado por local e deve ser ajustado na tela de movimentação de estoque.")
 
             col_btn1, col_btn2 = st.columns(2)
             salvar = col_btn1.form_submit_button("💾 Salvar alterações")
@@ -404,7 +413,6 @@ if produto_editar_id is not None:
                         categoria = ?,
                         fornecedor = ?,
                         valor_unitario = ?,
-                        estoque = ?,
                         data_reposicao = ?,
                         imagem = ?
                     WHERE id = ?
@@ -414,7 +422,6 @@ if produto_editar_id is not None:
                     nova_categoria,
                     novo_fornecedor,
                     novo_valor_unitario,
-                    novo_estoque,
                     nova_data_reposicao,
                     nome_imagem,
                     produto_editar_id
@@ -425,6 +432,7 @@ if produto_editar_id is not None:
                 st.success("Produto atualizado com sucesso!")
                 st.session_state["produto_editar_id"] = None
                 st.rerun()
+
             except sqlite3.IntegrityError:
                 st.error("Já existe um produto com esse código.")
 
@@ -467,7 +475,12 @@ if produto_excluir_id is not None:
                 conn = get_connection()
                 cursor = conn.cursor()
 
+                # limpeza de registros relacionados
+                cursor.execute("DELETE FROM estoque_locais WHERE produto_id = ?", (produto_excluir_id,))
+                cursor.execute("DELETE FROM movimentacoes WHERE produto_id = ?", (produto_excluir_id,))
+                cursor.execute("DELETE FROM devolucoes WHERE produto_id = ?", (produto_excluir_id,))
                 cursor.execute("DELETE FROM produtos WHERE id = ?", (produto_excluir_id,))
+                
                 conn.commit()
                 conn.close()
 

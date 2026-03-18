@@ -27,8 +27,9 @@ CREATE TABLE IF NOT EXISTS movimentacoes (
                    quantidade INTEGER,
                    data DATE,
                    observacoes TEXT,
-                   local_origme_id INTEGER,
-                   local_destino_id INTEGER
+                   local_origem_id INTEGER,
+                   local_destino_id INTEGER,
+                   criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                    )
                    """)
     
