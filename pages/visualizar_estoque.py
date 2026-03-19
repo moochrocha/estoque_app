@@ -269,7 +269,7 @@ else:
                     texto_estoque = f"Estoque disponível ({int(estoque)})"
 
                 st.markdown(
-                    f'<div class="texto-card"><b>Estoque total::</b> <span class="{classe_estoque}">{texto_estoque}</span></div>',
+                    f'<div class="texto-card"><b>Estoque total:</b> <span class="{classe_estoque}">{texto_estoque}</span></div>',
                     unsafe_allow_html=True
                 )
 
