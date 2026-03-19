@@ -5,12 +5,17 @@ import unicodedata
 from database.connection import get_connection
 from services.estoque_service import criar_estoque_inicial_local
 from datetime import date
+from services.auth import require_login, render_sidebar_logout
 import os
 
 st.set_page_config(
     page_title="Cadastrar produto",
     page_icon="📋",
     layout="wide")
+
+require_login()
+render_sidebar_logout()
+
 
 st.title("📋 Cadastrar Produto")
 # ------------
@@ -158,6 +163,7 @@ if cadastrar:
         # cria estoque inicial no local padrão
         criar_estoque_inicial_local(produto_id, estoque, "Estoque Local")
         st.success("✅ Produto cadastrado com sucesso!")
+        st.toast("Cadastro concluído", icon="✅")
         #st.rerun()
 
     except sqlite3.IntegrityError:

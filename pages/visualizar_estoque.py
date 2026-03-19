@@ -8,11 +8,18 @@ import sqlite3
 import pandas as pd
 from database.connection import get_connection
 from services.estoque_service import get_estoques_por_produto
+from services.auth import require_login, render_sidebar_logout
 
 st.set_page_config(
     page_title="Estoque de produtos",
     page_icon="📦",
     layout="wide")
+
+# -----
+# LOGIN
+# -----
+require_login()
+render_sidebar_logout()
 
 st.title("📦 Estoque de Produtos")
 

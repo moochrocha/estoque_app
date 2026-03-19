@@ -1,5 +1,4 @@
 import streamlit as st
-import bcrypt
 from database.models import create_tables
 from services.auth import login_user, logout_user, is_authenticated
 
@@ -28,7 +27,7 @@ if not is_authenticated():
             st.success("Login realizado com sucesso!")
             st.rerun()
         else:
-            st.erro("Usuário ou sena inválidos")
+            st.erro("Usuário ou senha inválidos")
 
     st.stop()
 
@@ -36,11 +35,11 @@ if not is_authenticated():
 # APP LOGADO
 # ----------
 st.title("📦 Gestão de Estoque Inteligente")
-st.write("Aplicação para gerenciamento de estoque.")
+st.write("Aplicação para gerenciamento de estoque para e-commerce.")
 
 with st.sidebar:
     st.success("Selecione uma página")
-    st.write(f"Usuário: {st.session_state.get('auth_uuser', '-')}")
+    st.write(f"Usuário: {st.session_state.get('auth_user', '-')}")
     if st.button("Sair", use_container_width=True):
         logout_user()
         st.rerun()

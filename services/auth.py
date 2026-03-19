@@ -29,3 +29,10 @@ def require_login():
     if not is_authenticated():
         st.warning("Você precisa estar logado para acessar esta página.")
         st.stop()
+
+def render_sidebar_logout():
+    with st.sidebar:
+        st.write(f"Usuário: {st.session_state.get('auth_user', '-')}")
+        if st.button("Sair", use_container_width=True):
+            logout_user()
+            st.rerun()

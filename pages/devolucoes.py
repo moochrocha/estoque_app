@@ -1,12 +1,20 @@
 import streamlit as st
 from database.connection import get_connection
 from datetime import date, datetime
+from services.auth import require_login, render_sidebar_logout
 
 st.set_page_config(
     page_title="Devoluções",
     page_icon="↩️",
     layout="wide"
 )
+
+# -----
+# LOGIN
+# -----
+require_login()
+render_sidebar_logout()
+
 
 st.title("↩️ Devoluções de Produtos")
 
@@ -200,7 +208,7 @@ else:
                 
             conn.commit()
             st.success("✅ Devolução registrada com sucesso!")
-            st.rerun()
+            st.toast("Cadastro concluído", icon="✅")
 
         finally:
             conn.close()
