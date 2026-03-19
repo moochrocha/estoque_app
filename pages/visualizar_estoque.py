@@ -4,7 +4,7 @@ from PIL import Image
 import unicodedata
 
 import streamlit as st
-import sqlite3
+import psycopg
 import pandas as pd
 from database.connection import get_connection
 from services.estoque_service import get_estoques_por_produto
@@ -26,7 +26,6 @@ st.title("📦 Estoque de Produtos")
 # -----------
 # FUNÇÕES AUX
 # -----------
-
 def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
@@ -51,21 +50,24 @@ def preparar_imagem(caminho_imagem, largura=500, altura=500):
     
 def carregar_produtos():
     conn = get_connection()
-    df_local = pd.read_sql("""
-        SELECT
-            id,
-            imagem,
-            codigo,
-            descricao,
-            categoria,
-            fornecedor,
-            valor_unitario,
-            estoque,
-            data_reposicao
-        FROM produtos
-    """, conn)
-    conn.close()
-    return df_local
+    try:
+        df_local = pd.read_sql("""
+            SELECT
+                id,
+                imagem,
+                codigo,
+                descricao,
+                categoria,
+                fornecedor,
+                valor_unitario,
+                estoque,
+                data_reposicao
+            FROM produtos
+        """, conn)
+        return df_local
+    finally:
+        conn.close()
+    
 
 def normalizar_texto(texto):
     return " ".join(texto.strip().split())
@@ -337,7 +339,7 @@ if produto_editar_id is not None:
             data_reposicao,
             imagem
         FROM produtos
-        WHERE id = ?
+        WHERE id = %s
     """, (produto_editar_id,))
     produto = cursor.fetchone()
     conn.close()
@@ -428,14 +430,14 @@ if produto_editar_id is not None:
                 cursor.execute("""
                     UPDATE produtos
                     SET
-                        codigo = ?,
-                        descricao = ?,
-                        categoria = ?,
-                        fornecedor = ?,
-                        valor_unitario = ?,
-                        data_reposicao = ?,
-                        imagem = ?
-                    WHERE id = ?
+                        codigo = %s,
+                        descricao = %s,
+                        categoria = %s,
+                        fornecedor = %s,
+                        valor_unitario = %s,
+                        data_reposicao = %s,
+                        imagem = %s
+                    WHERE id = %s
                 """, (
                     novo_codigo,
                     nova_descricao,
@@ -453,7 +455,8 @@ if produto_editar_id is not None:
                 st.session_state["produto_editar_id"] = None
                 st.rerun()
 
-            except sqlite3.IntegrityError:
+            except psycopg.IntegrityError:
+                conn.rollback()
                 st.error("Já existe um produto com esse código.")
 
             finally:
@@ -477,7 +480,7 @@ if produto_excluir_id is not None:
     cursor.execute("""
             SELECT id, codigo, descricao, imagem
             FROM produtos
-            WHERE id = ?
+            WHERE id = %s
             """, (produto_excluir_id,))
     produto_excluir = cursor.fetchone()
     conn.close()
@@ -496,10 +499,10 @@ if produto_excluir_id is not None:
                 cursor = conn.cursor()
 
                 # limpeza de registros relacionados
-                cursor.execute("DELETE FROM estoque_locais WHERE produto_id = ?", (produto_excluir_id,))
-                cursor.execute("DELETE FROM movimentacoes WHERE produto_id = ?", (produto_excluir_id,))
-                cursor.execute("DELETE FROM devolucoes WHERE produto_id = ?", (produto_excluir_id,))
-                cursor.execute("DELETE FROM produtos WHERE id = ?", (produto_excluir_id,))
+                cursor.execute("DELETE FROM estoque_locais WHERE produto_id = %s", (produto_excluir_id,))
+                cursor.execute("DELETE FROM movimentacoes WHERE produto_id = %s", (produto_excluir_id,))
+                cursor.execute("DELETE FROM devolucoes WHERE produto_id = %s", (produto_excluir_id,))
+                cursor.execute("DELETE FROM produtos WHERE id = %s", (produto_excluir_id,))
                 
                 conn.commit()
                 conn.close()

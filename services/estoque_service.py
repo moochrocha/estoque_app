@@ -4,7 +4,7 @@ def get_local_id_por_nome(nome_local):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id FROM locais_estoque WHERE nome = ?", (nome_local,))
+    cursor.execute("SELECT id FROM locais_estoque WHERE nome = %s", (nome_local,))
     local = cursor.fetchone()
 
     conn.close()
@@ -20,14 +20,15 @@ def criar_estoque_inicial_local(produto_id, quantidade, nome_local="Estoque Loca
     cursor = conn.cursor()
 
     cursor.execute("""
-    INSERT OR IGNORE INTO estoque_locais (produto_id, local_id, quantidade)
-    VALUES (?, ?, 0)
+    INSERT INTO estoque_locais (produto_id, local_id, quantidade)
+    VALUES (%s, %s, 0)
+    ON CONFLICT (produto_id, local_id) DO NOTHING
                    """, (produto_id, local_id))
     
     cursor.execute("""
     UPDATE estoque_locais
-    SET quantidade = quantidade + ?
-    WHERE produto_id = ? AND local_id = ?
+    SET quantidade = quantidade + %s
+    WHERE produto_id = %s AND local_id = %s
                    """, (quantidade, produto_id, local_id))
     
     conn.commit()
@@ -42,7 +43,7 @@ def recalcular_estoque_total(produto_id):
     cursor.execute("""
     SELECT COALESCE(SUM(quantidade), 0) AS total
     FROM estoque_locais
-    WHERE produto_id = ?
+    WHERE produto_id = %s
                    """, (produto_id,))
     
     resultado = cursor.fetchone()
@@ -50,8 +51,8 @@ def recalcular_estoque_total(produto_id):
 
     cursor.execute("""
     UPDATE produtos
-    SET estoque = ?
-    WHERE id = ?
+    SET estoque = %s
+    WHERE id = %s
                    """, (total, produto_id))
     
     conn.commit()
@@ -68,8 +69,8 @@ def get_estoques_por_produto(produto_id):
         COALESCE(e.quantidade, 0) AS quantidade
     FROM locais_estoque l
     LEFT JOIN estoque_locais e
-            ON l.id = e.local_id AND e.produto_id = ?
-    WHERE l.ativo = 1
+            ON l.id = e.local_id AND e.produto_id = %s
+    WHERE l.ativo = TRUE
     ORDER BY l.nome
     """, (produto_id,))
 

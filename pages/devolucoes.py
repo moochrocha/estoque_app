@@ -2,6 +2,7 @@ import streamlit as st
 from database.connection import get_connection
 from datetime import date, datetime
 from services.auth import require_login, render_sidebar_logout
+from services.estoque_service import get_local_id_por_nome, recalcular_estoque_total
 
 st.set_page_config(
     page_title="Devoluções",
@@ -53,7 +54,7 @@ if "devolucao_excluir_id" not in st.session_state:
 conn = get_connection()
 cursor = conn.cursor()
 
-cursor.execute("SELECT id, codigo, estoque FROM produtos")
+cursor.execute("SELECT id, codigo, estoque FROM produtos ORDER BY codigo")
 produtos = cursor.fetchall()
 
 conn.close()
@@ -171,13 +172,29 @@ else:
         try:
             # atualizar estoque se elegível
             if elegivel:
+                local_id = get_local_id_por_nome("Estoque Local")
 
+                if local_id is None:
+                    conn.close()
+                    st.error("Local 'Estoque Local' não encontrado")
+                    st.stop()
+
+                cursor.execute("""
+                    INSERT INTO estoque_locais (produto_id, local_id, quantidade)
+                    VALUES (%s, %s, 0)
+                    ON CONFLICT (produto_id, local_id) DO NOTHING
+                               """, (produto_id, local_id))
+                
+                cursor.execute("""
+                    UPDATE estoque_locais
+                    SET 
+                               """)
                 novo_estoque = estoque_atual + quantidade
 
                 cursor.execute("""
                 UPDATE produtos
-                SET estoque = ?
-                WHERE id = ?
+                SET estoque = %s
+                WHERE id = %s
                             """, (novo_estoque, produto_id))
                 
             # registrar devolução
@@ -193,7 +210,7 @@ else:
                         elegivel_venda,
                         data
                     )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 produto_id,
                 quantidade,

@@ -1,5 +1,5 @@
 import streamlit as st
-import sqlite3
+import psycopg
 import uuid
 import unicodedata
 from database.connection import get_connection
@@ -18,6 +18,7 @@ render_sidebar_logout()
 
 
 st.title("📋 Cadastrar Produto")
+
 # ------------
 # FUNÇÕES AUX
 # ------------
@@ -132,7 +133,7 @@ if cadastrar:
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id FROM produtos WHERE codigo = ?", (codigo,))
+    cursor.execute("SELECT id FROM produtos WHERE codigo = %s", (codigo,))
     existe = cursor.fetchone()
 
     if existe:
@@ -144,7 +145,8 @@ if cadastrar:
 
         cursor.execute("""
         INSERT INTO produtos (codigo, descricao, categoria, fornecedor, valor_unitario, imagem, estoque, data_reposicao)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
                     """, (
                         codigo, 
                         descricao, 
@@ -156,7 +158,7 @@ if cadastrar:
                         data
                         ))
         
-        produto_id = cursor.lastrowid
+        produto_id = cursor.fetchone()["id"]
         conn.commit()
         conn.close()
 
@@ -164,9 +166,9 @@ if cadastrar:
         criar_estoque_inicial_local(produto_id, estoque, "Estoque Local")
         st.success("✅ Produto cadastrado com sucesso!")
         st.toast("Cadastro concluído", icon="✅")
-        #st.rerun()
 
-    except sqlite3.IntegrityError:
+    except psycopg.IntegrityError:
+        conn.rollback()
         st.error("Já existe um produto cadastrado com esse código. Utilize um código diferente.")
 
     finally:

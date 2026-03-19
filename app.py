@@ -1,5 +1,4 @@
 import streamlit as st
-from database.models import create_tables
 from services.auth import login_user, logout_user, is_authenticated
 
 st.set_page_config(
@@ -7,8 +6,6 @@ st.set_page_config(
     page_icon="📦",
     layout="wide"
 )
-
-create_tables()
 
 # -------------
 # TELA DE LOGIN

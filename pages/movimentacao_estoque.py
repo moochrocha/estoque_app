@@ -55,7 +55,7 @@ cursor = conn.cursor()
 cursor.execute("SELECT id, codigo, estoque FROM produtos ORDER BY codigo")
 produtos = cursor.fetchall()
 
-cursor.execute("SELECT id, nome FROM locais_estoque WHERE ativo = 1 ORDER BY nome")
+cursor.execute("SELECT id, nome FROM locais_estoque WHERE ativo = TRUE ORDER BY nome")
 locais = cursor.fetchall()
 
 conn.close()
@@ -114,6 +114,7 @@ with st.form("movimentacao_estoque"):
     with col1:
         quantidade = st.number_input("Quantidade", min_value=1, step=1)
         data_mov = st.date_input("Data da movimentação", value=date.today())
+
     with col2:
         motivo = st.selectbox(
         "Motivo da movimentação",
@@ -177,14 +178,15 @@ if registrar:
 
         if tipo == "Entrada":
             cursor.execute("""
-                INSERT OR IGNORE INTO estoque_locais (produto_id, local_id, quantidade)
-                VALUES (?, ?, 0)
+                INSERT INTO estoque_locais (produto_id, local_id, quantidade)
+                VALUES (%s, %s, 0)
+                ON CONFLICT (produto_id, local_id) DO NOTHING
                            """, (produto_id, local_destino_id))
 
             cursor.execute("""
                 UPDATE estoque_locais
-                SET quantidade = quantidade + ?
-                WHERE produto_id = ? AND local_id = ?
+                SET quantidade = quantidade + %s
+                WHERE produto_id = %s AND local_id = %s
                            """, (quantidade, produto_id, local_destino_id))
             tipo_db = "entrada"
             
@@ -192,7 +194,7 @@ if registrar:
             cursor.execute("""
                 SELECT quantidade
                 FROM estoque_locais
-                WHERE produto_id = ? AND local_id = ?
+                WHERE produto_id = %s AND local_id = %s
                            """, (produto_id, local_origem_id))
             
             saldo = cursor.fetchone()
@@ -205,8 +207,8 @@ if registrar:
 
             cursor.execute("""
                 UPDATE estoque_locais
-                SET quantidade = quantidade - ?
-                WHERE produto_id = ? AND local_id = ?
+                SET quantidade = quantidade - %s
+                WHERE produto_id = %s AND local_id = %s
                            """, (quantidade, produto_id, local_origem_id))
             tipo_db = "saida"
 
@@ -220,7 +222,7 @@ if registrar:
             cursor.execute("""
                 SELECT quantidade
                 FROM estoque_locais
-                WHERE produto_id = ? AND local_id = ?
+                WHERE produto_id = %s AND local_id = %s
                            """, (produto_id, local_origem_id))
             
             saldo = cursor.fetchone()
@@ -232,21 +234,22 @@ if registrar:
                 st.stop()
 
             cursor.execute("""
-                INSERT OR IGNORE INTO estoque_locais (produto_id, local_id, quantidade)
-                VALUES (?, ?, 0)
+                INSERT INTO estoque_locais (produto_id, local_id, quantidade)
+                VALUES (%s, %s, 0)
+                ON CONFLICT (produto_id, local_id) DO NOTHING
                            """, (produto_id, local_destino_id))
             # saída da origem
             cursor.execute("""
                 UPDATE estoque_locais
-                SET quantidade = quantidade - ?
-                WHERE produto_id = ? AND local_id = ?
+                SET quantidade = quantidade - %s
+                WHERE produto_id = %s AND local_id = %s
                            """, (quantidade, produto_id, local_origem_id))
             
             # entrada no destino
             cursor.execute("""
                 UPDATE estoque_locais
-                SET quantidade = quantidade + ?
-                WHERE produto_id = ? AND local_id = ?
+                SET quantidade = quantidade + %s
+                WHERE produto_id = %s AND local_id = %s
                            """, (quantidade, produto_id, local_destino_id))
             
             tipo_db = "transferencia"
@@ -254,7 +257,7 @@ if registrar:
         cursor.execute("""
             INSERT INTO movimentacoes
             (produto_id, tipo, quantidade, data, observacoes, local_origem_id, local_destino_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
                        """, (
                            produto_id,
                            tipo_db,
