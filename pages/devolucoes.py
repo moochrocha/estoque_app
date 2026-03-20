@@ -16,24 +16,18 @@ st.set_page_config(
 require_login()
 render_sidebar_logout()
 
-
 st.title("↩️ Devoluções de Produtos")
 
 st.markdown("""
 <style>
-
-/* cartões dos inputs */
 div[data-testid="stVerticalBlock"] > div:has(div.stTextInput),
 div[data-testid="stVerticalBlock"] > div:has(div.stNumberInput),
 div[data-testid="stVerticalBlock"] > div:has(div.stDateInput),
 div[data-testid="stVerticalBlock"] > div:has(div[data-baseweb="select"]) {
-
-    
     border-radius: 15px;
     padding: 20px;
     background-color: rgba(255,255,255,0.02);
 }
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -48,15 +42,14 @@ if "devolucao_editar_id" not in st.session_state:
 
 if "devolucao_excluir_id" not in st.session_state:
     st.session_state["devolucao_excluir_id"] = None
+
 # -----------------
 # CARREGAR PRODUTOS
 # -----------------
 conn = get_connection()
 cursor = conn.cursor()
-
 cursor.execute("SELECT id, codigo, estoque FROM produtos ORDER BY codigo")
 produtos = cursor.fetchall()
-
 conn.close()
 
 lista = {p["codigo"]: p for p in produtos}
@@ -152,10 +145,7 @@ else:
     # --------
     # REGISTRAR
     # --------
-
     if registrar:
-
-        # padronizar
         observacao = normalizar_texto(observacao)
         id_solicitacao = normalizar_texto(id_solicitacao).upper()
         link_solicitacao = normalizar_texto(link_solicitacao)
@@ -163,53 +153,45 @@ else:
         if link_solicitacao and not (
             link_solicitacao.startswith("http://") or link_solicitacao.startswith("https://")
         ):
-            st.error("O link da solicitaçao deve começar com http:// ou https://")
+            st.error("O link da solicitação deve começar com http:// ou https://")
             st.stop()
 
         conn = get_connection()
         cursor = conn.cursor()
 
         try:
-            # atualizar estoque se elegível
             if elegivel:
                 local_id = get_local_id_por_nome("Estoque Local")
 
                 if local_id is None:
                     conn.close()
-                    st.error("Local 'Estoque Local' não encontrado")
+                    st.error("Local 'Estoque Local' não encontrado.")
                     st.stop()
 
                 cursor.execute("""
                     INSERT INTO estoque_locais (produto_id, local_id, quantidade)
                     VALUES (%s, %s, 0)
                     ON CONFLICT (produto_id, local_id) DO NOTHING
-                               """, (produto_id, local_id))
-                
-                cursor.execute("""
-                    UPDATE estoque_locais
-                    SET 
-                               """)
-                novo_estoque = estoque_atual + quantidade
+                """, (produto_id, local_id))
 
                 cursor.execute("""
-                UPDATE produtos
-                SET estoque = %s
-                WHERE id = %s
-                            """, (novo_estoque, produto_id))
-                
-            # registrar devolução
+                    UPDATE estoque_locais
+                    SET quantidade = quantidade + %s
+                    WHERE produto_id = %s AND local_id = %s
+                """, (quantidade, produto_id, local_id))
+
             cursor.execute("""
-            INSERT INTO devolucoes  (
-                        produto_id,
-                        quantidade,
-                        motivo,
-                        observacoes,
-                        plataforma,
-                        id_solicitacao,
-                        link_solicitacao,
-                        elegivel_venda,
-                        data
-                    )
+                INSERT INTO devolucoes (
+                    produto_id,
+                    quantidade,
+                    motivo,
+                    observacoes,
+                    plataforma,
+                    id_solicitacao,
+                    link_solicitacao,
+                    elegivel_venda,
+                    data
+                )
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 produto_id,
@@ -219,23 +201,28 @@ else:
                 plataforma,
                 id_solicitacao if id_solicitacao else None,
                 link_solicitacao if link_solicitacao else None,
-                1 if elegivel else 0,
+                elegivel,
                 data_devolucao
             ))
-                
+
             conn.commit()
+
+            if elegivel:
+                recalcular_estoque_total(produto_id)
+
             st.success("✅ Devolução registrada com sucesso!")
             st.toast("Cadastro concluído", icon="✅")
 
         finally:
-            conn.close()
+            try:
+                conn.close()
+            except:
+                pass
 
 # ---------
 # HISTÓRICO
 # ---------
-
 st.divider()
-
 st.subheader("📜 Últimas devoluções")
 
 conn = get_connection()
@@ -244,13 +231,13 @@ cursor = conn.cursor()
 cursor.execute("""
 SELECT
     d.id,
-    d.quantidade, 
+    d.quantidade,
     d.motivo,
     d.observacoes,
     d.plataforma,
     d.id_solicitacao,
     d.link_solicitacao,
-    d.elegivel_venda, 
+    d.elegivel_venda,
     d.data,
     p.codigo
 FROM devolucoes d
@@ -263,8 +250,8 @@ conn.close()
 
 if devolucoes:
     for d in devolucoes:
-
         status = "✅ Elegível para venda" if d["elegivel_venda"] else "❌ Produto descartado"
+
         with st.container(border=True):
             col1, col2 = st.columns([4, 1])
 
@@ -310,7 +297,7 @@ if devolucao_excluir_id is not None:
             p.codigo
         FROM devolucoes d
         JOIN produtos p ON d.produto_id = p.id
-        WHERE d.id = ?
+        WHERE d.id = %s
     """, (devolucao_excluir_id,))
     devolucao_excluir = cursor.fetchone()
     conn.close()
@@ -336,41 +323,54 @@ if devolucao_excluir_id is not None:
                 cursor = conn.cursor()
 
                 try:
-                    # Se a devolução entrou no estoque, remover o impacto antes de apagar
                     if devolucao_excluir["elegivel_venda"]:
-                        cursor.execute(
-                            "SELECT estoque FROM produtos WHERE id = ?",
-                            (devolucao_excluir["produto_id"],)
-                        )
-                        produto = cursor.fetchone()
+                        local_id = get_local_id_por_nome("Estoque Local")
 
-                        if produto:
-                            estoque_atual = produto["estoque"]
-                            novo_estoque = estoque_atual - devolucao_excluir["quantidade"]
+                        if local_id is None:
+                            conn.close()
+                            st.error("Local 'Estoque Local' não encontrado.")
+                            st.stop()
 
-                            if novo_estoque < 0:
-                                conn.close()
-                                st.error("Não foi possível excluir: a operação deixaria o estoque negativo.")
-                                st.stop()
+                        cursor.execute("""
+                            SELECT quantidade
+                            FROM estoque_locais
+                            WHERE produto_id = %s AND local_id = %s
+                        """, (devolucao_excluir["produto_id"], local_id))
+                        saldo = cursor.fetchone()
 
-                            cursor.execute("""
-                                UPDATE produtos
-                                SET estoque = ?
-                                WHERE id = ?
-                            """, (novo_estoque, devolucao_excluir["produto_id"]))
+                        saldo_atual = saldo["quantidade"] if saldo else 0
+                        novo_estoque_local = saldo_atual - devolucao_excluir["quantidade"]
+
+                        if novo_estoque_local < 0:
+                            conn.close()
+                            st.error("Não foi possível excluir: a operação deixaria o estoque negativo no Estoque Local.")
+                            st.stop()
+
+                        cursor.execute("""
+                            UPDATE estoque_locais
+                            SET quantidade = %s
+                            WHERE produto_id = %s AND local_id = %s
+                        """, (novo_estoque_local, devolucao_excluir["produto_id"], local_id))
 
                     cursor.execute(
-                        "DELETE FROM devolucoes WHERE id = ?",
+                        "DELETE FROM devolucoes WHERE id = %s",
                         (devolucao_excluir_id,)
                     )
 
                     conn.commit()
+
+                    if devolucao_excluir["elegivel_venda"]:
+                        recalcular_estoque_total(devolucao_excluir["produto_id"])
+
                     st.success("✅ Devolução excluída com sucesso!")
                     st.session_state["devolucao_excluir_id"] = None
                     st.rerun()
 
                 finally:
-                    conn.close()
+                    try:
+                        conn.close()
+                    except:
+                        pass
 
         with col_btn2:
             if st.button(
@@ -406,29 +406,29 @@ if devolucao_editar_id is not None:
             link_solicitacao,
             data
         FROM devolucoes
-        WHERE id = ?
-                """, (devolucao_editar_id,))
+        WHERE id = %s
+    """, (devolucao_editar_id,))
     devolucao = cursor.fetchone()
     conn.close()
 
     if devolucao:
         motivos_opcoes = [
-                    "Cliente desistiu",
-                    "Produto com defeito",
-                    "Produto danificado no transporte",
-                    "Erro no envio",
-                    "Outro"
-                ]
-        
+            "Cliente desistiu",
+            "Produto com defeito",
+            "Produto danificado no transporte",
+            "Erro no envio",
+            "Outro"
+        ]
+
         plataformas_opcoes = [
-                    "Shopee",
-                    "Mercado Livre",
-                    "Amazon",
-                    "Magalu",
-                    "Tik Tok Shop",
-                    "Outro"
-                ]
-        
+            "Shopee",
+            "Mercado Livre",
+            "Amazon",
+            "Magalu",
+            "Tik Tok Shop",
+            "Outro"
+        ]
+
         motivo_atual = devolucao["motivo"] if devolucao["motivo"] in motivos_opcoes else "Outro"
         plataforma_atual = devolucao["plataforma"] if devolucao["plataforma"] in plataformas_opcoes else "Outro"
 
@@ -438,7 +438,6 @@ if devolucao_editar_id is not None:
             data_padrao = date.today()
 
         with st.form("form_editar_devolucao"):
-
             col1, col2 = st.columns(2)
 
             with col1:
@@ -450,7 +449,7 @@ if devolucao_editar_id is not None:
 
                 observacoes_edit = st.text_input(
                     "Observações",
-                    value= devolucao["observacoes"] or "",
+                    value=devolucao["observacoes"] or "",
                     placeholder="Detalhes adicionais"
                 )
 
@@ -495,47 +494,45 @@ if devolucao_editar_id is not None:
             st.rerun()
 
         if salvar_edicao:
-            # padronização
             observacoes_edit = normalizar_texto(observacoes_edit)
             id_solicitacao_edit = normalizar_texto(id_solicitacao_edit).upper()
             link_solicitacao_edit = normalizar_texto(link_solicitacao_edit)
 
-            # validação link
             if link_solicitacao_edit and not (
                 link_solicitacao_edit.startswith("http://") or link_solicitacao_edit.startswith("https://")
             ):
                 st.error("O link da solicitação deve começar com http:// ou https://")
                 st.stop()
-        
+
             conn = get_connection()
             cursor = conn.cursor()
 
             cursor.execute("""
                 UPDATE devolucoes
                 SET
-                    motivo = ?,
-                    observacoes = ?,
-                    plataforma = ?,
-                    id_solicitacao = ?,
-                    link_solicitacao = ?,
-                    data = ?
-                WHERE id = ?
-                        """, (
-                            motivo_edit,
-                            observacoes_edit if observacoes_edit else None,
-                            plataforma_edit,
-                            id_solicitacao_edit if id_solicitacao_edit else None,
-                            link_solicitacao_edit if link_solicitacao_edit else None,
-                            data_edit,
-                            devolucao_editar_id
-                        ))
+                    motivo = %s,
+                    observacoes = %s,
+                    plataforma = %s,
+                    id_solicitacao = %s,
+                    link_solicitacao = %s,
+                    data = %s
+                WHERE id = %s
+            """, (
+                motivo_edit,
+                observacoes_edit if observacoes_edit else None,
+                plataforma_edit,
+                id_solicitacao_edit if id_solicitacao_edit else None,
+                link_solicitacao_edit if link_solicitacao_edit else None,
+                data_edit,
+                devolucao_editar_id
+            ))
             conn.commit()
             conn.close()
 
             st.success("✅ Devolução atualizada com sucesso!")
             st.session_state["devolucao_editar_id"] = None
             st.rerun()
-        
+
     else:
         st.session_state["devolucao_editar_id"] = None
         st.warning("Devolução não encontrada para edição.")

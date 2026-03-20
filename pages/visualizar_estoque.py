@@ -50,25 +50,35 @@ def preparar_imagem(caminho_imagem, largura=500, altura=500):
     
 def carregar_produtos():
     conn = get_connection()
-    try:
-        df_local = pd.read_sql("""
-            SELECT
-                id,
-                imagem,
-                codigo,
-                descricao,
-                categoria,
-                fornecedor,
-                valor_unitario,
-                estoque,
-                data_reposicao
-            FROM produtos
-        """, conn)
-        return df_local
-    finally:
-        conn.close()
-    
+    cursor = conn.cursor()
 
+    cursor.execute("""
+        SELECT
+            id,
+            imagem,
+            codigo,
+            descricao,
+            categoria,
+            fornecedor,
+            valor_unitario,
+            estoque,
+            data_reposicao
+        FROM produtos
+        ORDER BY id
+                   """)
+    
+    dados = cursor.fetchall()
+    conn.close()
+
+    df_local = pd.DataFrame(dados)
+
+    if not df_local.empty:
+        df_local["id"] = pd.to_numeric(df_local["id"], errors="coerce")
+        df_local["valor_unitario"] = pd.to_numeric(df_local["valor_unitario"], errors="coerce").fillna(0)
+        df_local["estoque"] = pd.to_numeric(df_local["estoque"], errors="coerce").fillna(0)
+
+    return df_local
+    
 def normalizar_texto(texto):
     return " ".join(texto.strip().split())
 
@@ -154,8 +164,9 @@ if "produto_excluir_id" not in st.session_state:
 df = carregar_produtos()
 
 if not df.empty:
-    df["valor_unitario"] = df["valor_unitario"].fillna(0)
-    df["estoque"] = df["estoque"].fillna(0)
+    df["id"] = pd.to_numeric(df["id"], errors="coerce")
+    df["valor_unitario"] = pd.to_numeric(df["valor_unitario"], errors="coerce").fillna(0)
+    df["estoque"] = pd.to_numeric(df["estoque"], errors="coerce").fillna(0)
 
 # -------
 # FILTROS
@@ -206,7 +217,7 @@ if filtro_fornecedor != "Todos":
 # -------------
 # MÉTRICAS
 # -------------
-total_estoque = int(df_filtrado["estoque"].sum()) if not df_filtrado.empty else 0
+total_estoque = int(float(df_filtrado["estoque"].sum())) if not df_filtrado.empty else 0
 total_produtos = len(df_filtrado)
 valor_total_estoque = (df_filtrado["valor_unitario"] * df_filtrado["estoque"]).sum() if not df_filtrado.empty else 0
 
@@ -233,7 +244,7 @@ else:
         with colunas[idx % 3]:
             with st.container(border=True):
 
-                estoques_locais = get_estoques_por_produto(row["id"])
+                estoques_locais = get_estoques_por_produto(int(row["id"]))
 
                 # imagem padronizada
                 if pd.notnull(row["imagem"]) and row["imagem"]:
