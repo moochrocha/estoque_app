@@ -1,12 +1,11 @@
 import streamlit as st
 import psycopg
-import uuid
 import unicodedata
 from database.connection import get_connection
 from services.estoque_service import criar_estoque_inicial_local
 from datetime import date
 from services.auth import require_login, render_sidebar_logout
-import os
+from services.storage_service import upload_imagem_produto
 
 st.set_page_config(
     page_title="Cadastrar produto",
@@ -118,61 +117,59 @@ if cadastrar:
         st.error("O fornecedor do produto é obrigatório.")
         st.stop()
 
-    os.makedirs("images", exist_ok=True)
-
     nome_imagem = None
-
-    if imagem is not None:
-        extensao = os.path.splitext(imagem.name)[1]
-        nome_imagem = f"{uuid.uuid4()}{extensao}"
-        caminho = os.path.join("images", nome_imagem)
-
-        with open(caminho, "wb") as f:
-            f.write(imagem.getbuffer())
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT id FROM produtos WHERE codigo = %s", (codigo,))
-    existe = cursor.fetchone()
-
-    if existe:
-        st.warning("Este código já está cadastrado. ")
-        conn.close()
-        st.stop()
 
     try:
 
-        cursor.execute("""
-        INSERT INTO produtos (codigo, descricao, categoria, fornecedor, valor_unitario, imagem, estoque, data_reposicao)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING id
-                    """, (
-                        codigo, 
-                        descricao, 
-                        categoria, 
-                        fornecedor, 
-                        valor_unitario, 
-                        nome_imagem, 
-                        0, 
-                        data
-                        ))
-        
-        produto_id = cursor.fetchone()["id"]
-        conn.commit()
-        conn.close()
+        if imagem is not None:
+            nome_imagem = upload_imagem_produto(imagem)
 
-        # cria estoque inicial no local padrão
-        criar_estoque_inicial_local(produto_id, estoque, "Estoque Local")
-        st.success("✅ Produto cadastrado com sucesso!")
-        st.toast("Cadastro concluído", icon="✅")
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT id FROM produtos WHERE codigo = %s", (codigo,))
+        existe = cursor.fetchone()
+
+        if existe:
+            st.warning("Este código já está cadastrado. ")
+            conn.close()
+            st.stop()
+
+            cursor.execute("""
+            INSERT INTO produtos (codigo, descricao, categoria, fornecedor, valor_unitario, imagem, estoque, data_reposicao)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+                        """, (
+                            codigo, 
+                            descricao, 
+                            categoria, 
+                            fornecedor, 
+                            valor_unitario, 
+                            nome_imagem, 
+                            0, 
+                            data
+                            ))
+            
+            produto_id = cursor.fetchone()["id"]
+            conn.commit()
+            conn.close()
+
+            # cria estoque inicial no local padrão
+            criar_estoque_inicial_local(produto_id, estoque, "Estoque Local")
+            st.success("✅ Produto cadastrado com sucesso!")
+            st.toast("Cadastro concluído", icon="✅")
 
     except psycopg.IntegrityError:
-        conn.rollback()
-        st.error("Já existe um produto cadastrado com esse código. Utilize um código diferente.")
+        try:
+            conn.rollback()
+            conn.close()
+        except:
+            pass
+            st.error("Já existe um produto cadastrado com esse código. Utilize um código diferente.")
 
-    finally:
+    except Exception as e:
         try:
             conn.close()
         except:
             pass
+        st.error(f"Erro ao cadastrar produto: {e}")
