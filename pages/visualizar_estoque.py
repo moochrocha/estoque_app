@@ -1,6 +1,4 @@
-import os
 from datetime import datetime
-from PIL import Image
 import unicodedata
 
 import streamlit as st
@@ -9,11 +7,17 @@ import pandas as pd
 from database.connection import get_connection
 from services.estoque_service import get_estoques_por_produto
 from services.auth import require_login, render_sidebar_logout
+from services.storage_service import (
+    get_url_publica_imagem,
+    upload_imagem_produto,
+    remover_imagem
+)
 
 st.set_page_config(
     page_title="Estoque de produtos",
     page_icon="📦",
-    layout="wide")
+    layout="wide"
+)
 
 # -----
 # LOGIN
@@ -29,56 +33,47 @@ st.title("📦 Estoque de Produtos")
 def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-def preparar_imagem(caminho_imagem, largura=500, altura=500):
-    """
-    Abre a imagem, redimensiona mantendo proporção e centraliza
-    em um canvas fixo para todas ficarem do mesmo tamanho visual.
-    """
-
-    try:
-        img = Image.open(caminho_imagem).convert("RGB")
-        img.thumbnail((largura, altura))
-
-        canvas = Image.new("RGB", (largura, altura), (245, 245, 245))
-        pos_x = (largura - img.width) // 2
-        pos_y = (altura - img.height) // 2
-        canvas.paste(img, (pos_x, pos_y))
-
-        return canvas
-    except Exception:
-        return None
-    
+@st.cache_data(ttl=60)
 def carregar_produtos():
     conn = get_connection()
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT
-            id,
-            imagem,
-            codigo,
-            descricao,
-            categoria,
-            fornecedor,
-            valor_unitario,
-            estoque,
-            data_reposicao
-        FROM produtos
-        ORDER BY id
-                   """)
-    
-    dados = cursor.fetchall()
-    conn.close()
+        cursor.execute("""
+            SELECT
+                id,
+                imagem,
+                codigo,
+                descricao,
+                categoria,
+                fornecedor,
+                valor_unitario,
+                estoque,
+                data_reposicao
+            FROM produtos
+            ORDER BY id
+        """)
 
-    df_local = pd.DataFrame(dados)
+        dados = cursor.fetchall()
+
+        df_local = pd.DataFrame(dados)
+        return df_local
+    finally:
+        conn.close()
 
     if not df_local.empty:
         df_local["id"] = pd.to_numeric(df_local["id"], errors="coerce")
         df_local["valor_unitario"] = pd.to_numeric(df_local["valor_unitario"], errors="coerce").fillna(0)
         df_local["estoque"] = pd.to_numeric(df_local["estoque"], errors="coerce").fillna(0)
 
+        df_local["descricao"] = df_local["descricao"].fillna("").astype(str)
+        df_local["codigo"] = df_local["codigo"].fillna("").astype(str)
+        df_local["categoria"] = df_local["categoria"].fillna("").astype(str)
+        df_local["fornecedor"] = df_local["fornecedor"].fillna("").astype(str)
+        df_local["imagem"] = df_local["imagem"].fillna("").astype(str)
+
     return df_local
-    
+
 def normalizar_texto(texto):
     return " ".join(texto.strip().split())
 
@@ -145,6 +140,24 @@ st.markdown("""
 .estoque-zero {
     color: #ef4444;
     font-weight: 700;
+}
+            
+.image-container {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background: linear-gradient(145deg, #1f2937, #111827);
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 12px;
+}
+
+.image-container img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -246,19 +259,28 @@ else:
 
                 estoques_locais = get_estoques_por_produto(int(row["id"]))
 
-                # imagem padronizada
                 if pd.notnull(row["imagem"]) and row["imagem"]:
-                    caminho_img = os.path.join("images", row["imagem"])
-                    if os.path.exists(caminho_img):
-                        imagem_padronizada = preparar_imagem(caminho_img, largura=320, altura=320)
-                        if imagem_padronizada:
-                            st.image(imagem_padronizada, use_container_width=True)
-                        else:
-                            st.markdown('<div class="img-placeholder">Imagem indisponível</div>', unsafe_allow_html=True)
-                    else:
-                        st.markdown('<div class="img-placeholder">Imagem não encontrada</div>', unsafe_allow_html=True)
+                    url_imagem = get_url_publica_imagem(row["imagem"])
+
+                    if url_imagem:
+                        st.markdown(
+                            f"""
+                            <div class="image-container">
+                                <img src="{url_imagem}">
+                            </div>
+                            """,
+                            unsafe_allow_html=True)
+                    else:   
+                        st.markdown('<div class="img-placeholder">Imagem indisponível</div>', unsafe_allow_html=True)
                 else:
-                    st.markdown('<div class="img-placeholder">Sem imagem</div>', unsafe_allow_html=True)
+                    st.markdown(
+                        """
+                        <div class="image-container">
+                            <span style="color:#999;">Sem imagem</span>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
 
                 st.markdown(
                     f'<div class="titulo-produto">{row["descricao"]}</div>',
@@ -269,17 +291,17 @@ else:
                 st.markdown(f'<div class="texto-card"><b>Categoria:</b> {row["categoria"]}</div>', unsafe_allow_html=True)
                 st.markdown(f'<div class="texto-card"><b>Fornecedor:</b> {row["fornecedor"]}</div>', unsafe_allow_html=True)
 
-                estoque = row["estoque"] if pd.notnull(row["estoque"]) else 0
+                estoque = int(row["estoque"]) if pd.notnull(row["estoque"]) else 0
 
                 if estoque == 0:
                     classe_estoque = "estoque-zero"
-                    texto_estoque = f"Sem estoque ({int(estoque)})"
+                    texto_estoque = f"Sem estoque ({estoque})"
                 elif estoque <= 5:
                     classe_estoque = "estoque-baixo"
-                    texto_estoque = f"Estoque baixo ({int(estoque)})"
+                    texto_estoque = f"Estoque baixo ({estoque})"
                 else:
                     classe_estoque = "estoque-ok"
-                    texto_estoque = f"Estoque disponível ({int(estoque)})"
+                    texto_estoque = f"Estoque disponível ({estoque})"
 
                 st.markdown(
                     f'<div class="texto-card"><b>Estoque total:</b> <span class="{classe_estoque}">{texto_estoque}</span></div>',
@@ -298,7 +320,7 @@ else:
                         unsafe_allow_html=True
                     )
 
-                valor_unitario = row["valor_unitario"] if pd.notnull(row["valor_unitario"]) else 0
+                valor_unitario = float(row["valor_unitario"]) if pd.notnull(row["valor_unitario"]) else 0.0
                 valor_total_item = valor_unitario * estoque
 
                 st.markdown(
@@ -322,7 +344,7 @@ else:
                     if st.button("✏️ Editar", key=f"editar_{row['id']}", use_container_width=True):
                         st.session_state["produto_editar_id"] = int(row["id"])
                         st.session_state["produto_excluir_id"] = None
-                
+
                 with col_btn2:
                     if st.button("🗑️ Excluir", key=f"excluir_{row['id']}", use_container_width=True):
                         st.session_state["produto_excluir_id"] = int(row["id"])
@@ -399,22 +421,19 @@ if produto_editar_id is not None:
         if cancelar:
             st.session_state["produto_editar_id"] = None
             st.rerun()
-        
-        if salvar:
 
-            # padronização
+        if salvar:
             novo_codigo = normalizar_texto(novo_codigo).upper()
             nova_descricao = normalizar_texto(nova_descricao)
             nova_categoria = remover_acentos(normalizar_texto(nova_categoria)).title()
             novo_fornecedor = remover_acentos(normalizar_texto(novo_fornecedor)).title()
 
-            # validações
             if not novo_codigo:
                 st.error("O código do produto é obrigatório.")
                 st.stop()
 
             if not nova_descricao:
-                st.error("A descrição do produto é obrigátoria.")
+                st.error("A descrição do produto é obrigatória.")
                 st.stop()
 
             if not nova_categoria:
@@ -424,15 +443,18 @@ if produto_editar_id is not None:
             if not novo_fornecedor:
                 st.error("O fornecedor do produto é obrigatório.")
                 st.stop()
-                
+
             nome_imagem = produto["imagem"]
 
             if nova_imagem is not None:
-                nome_imagem = nova_imagem.name
-                caminho = os.path.join("images", nome_imagem)
+                caminho_antigo = produto["imagem"]
+                nome_imagem = upload_imagem_produto(nova_imagem, pasta="produtos_imagens")
 
-                with open(caminho, "wb") as f:
-                    f.write(nova_imagem.getbuffer())
+                if caminho_antigo:
+                    try:
+                        remover_imagem(caminho_antigo)
+                    except Exception:
+                        pass
 
             conn = get_connection()
             cursor = conn.cursor()
@@ -460,7 +482,6 @@ if produto_editar_id is not None:
                     produto_editar_id
                 ))
                 conn.commit()
-                
 
                 st.success("Produto atualizado com sucesso!")
                 st.session_state["produto_editar_id"] = None
@@ -489,10 +510,10 @@ if produto_excluir_id is not None:
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-            SELECT id, codigo, descricao, imagem
-            FROM produtos
-            WHERE id = %s
-            """, (produto_excluir_id,))
+        SELECT id, codigo, descricao, imagem
+        FROM produtos
+        WHERE id = %s
+    """, (produto_excluir_id,))
     produto_excluir = cursor.fetchone()
     conn.close()
 
@@ -509,12 +530,17 @@ if produto_excluir_id is not None:
                 conn = get_connection()
                 cursor = conn.cursor()
 
-                # limpeza de registros relacionados
+                if produto_excluir["imagem"]:
+                    try:
+                        remover_imagem(produto_excluir["imagem"])
+                    except Exception:
+                        pass
+
                 cursor.execute("DELETE FROM estoque_locais WHERE produto_id = %s", (produto_excluir_id,))
                 cursor.execute("DELETE FROM movimentacoes WHERE produto_id = %s", (produto_excluir_id,))
                 cursor.execute("DELETE FROM devolucoes WHERE produto_id = %s", (produto_excluir_id,))
                 cursor.execute("DELETE FROM produtos WHERE id = %s", (produto_excluir_id,))
-                
+
                 conn.commit()
                 conn.close()
 

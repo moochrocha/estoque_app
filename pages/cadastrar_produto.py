@@ -1,20 +1,21 @@
 import streamlit as st
 import psycopg
 import unicodedata
+from datetime import date
+
 from database.connection import get_connection
 from services.estoque_service import criar_estoque_inicial_local
-from datetime import date
 from services.auth import require_login, render_sidebar_logout
-from services.storage_service import upload_imagem_produto
+from services.storage_service import upload_imagem_produto, remover_imagem
 
 st.set_page_config(
     page_title="Cadastrar produto",
     page_icon="📋",
-    layout="wide")
+    layout="wide"
+)
 
 require_login()
 render_sidebar_logout()
-
 
 st.title("📋 Cadastrar Produto")
 
@@ -33,26 +34,21 @@ def remover_acentos(texto):
 # ------
 # ESTILO
 # ------
-
 st.markdown("""
 <style>
-/* cartões dos inputs */
 div[data-testid="stVerticalBlock"] > div:has(div.stTextInput),
 div[data-testid="stVerticalBlock"] > div:has(div.stNumberInput),
 div[data-testid="stVerticalBlock"] > div:has(div.stDateInput) {
-
     border-radius: 15px;
     padding: 20px;
     background-color: rgba(255,255,255,0.02);
 }
-
 </style>
 """, unsafe_allow_html=True)
 
 # -----
 # FORM
 # -----
-
 with st.form("form_cadastro_produto"):
 
     col1, col2 = st.columns(2)
@@ -69,10 +65,10 @@ with st.form("form_cadastro_produto"):
         st.subheader("Estoque e valores")
 
         valor_unitario = st.number_input("Valor unitário", min_value=0.0, format="%.2f")
-        estoque = st.number_input("Quantidade inicial", min_value=0)
+        estoque = st.number_input("Quantidade inicial", min_value=0, step=1)
         data = st.date_input("Data da última reposição", value=date.today())
 
-    st.subheader("🖼️ Imagem do produto")    
+    st.subheader("🖼️ Imagem do produto")
     imagem = st.file_uploader("Upload da imagem", type=["png", "jpg", "jpeg", "webp"])
 
     if imagem is not None:
@@ -80,10 +76,7 @@ with st.form("form_cadastro_produto"):
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ------
-    # BOTÃO
-    # ------
-    col_btn1, col_btn2, col_btn3 = st.columns([1,2,1])
+    col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
 
     with col_btn2:
         cadastrar = st.form_submit_button("Cadastrar produto", use_container_width=True)
@@ -91,16 +84,13 @@ with st.form("form_cadastro_produto"):
 # -------------
 # PROCESSAMENTO
 # -------------
-
 if cadastrar:
 
-    # padronização
     codigo = normalizar_texto(codigo).upper()
     descricao = normalizar_texto(descricao)
     categoria = remover_acentos(normalizar_texto(categoria)).title()
     fornecedor = remover_acentos(normalizar_texto(fornecedor)).title()
 
-    # validações
     if not codigo:
         st.error("O código do produto é obrigatório.")
         st.stop()
@@ -118,9 +108,9 @@ if cadastrar:
         st.stop()
 
     nome_imagem = None
+    conn = None
 
     try:
-
         if imagem is not None:
             nome_imagem = upload_imagem_produto(imagem)
 
@@ -131,45 +121,74 @@ if cadastrar:
         existe = cursor.fetchone()
 
         if existe:
-            st.warning("Este código já está cadastrado. ")
+            if nome_imagem:
+                try:
+                    remover_imagem(nome_imagem)
+                except Exception:
+                    pass
+
             conn.close()
+            st.warning("Este código já está cadastrado.")
             st.stop()
 
-            cursor.execute("""
-            INSERT INTO produtos (codigo, descricao, categoria, fornecedor, valor_unitario, imagem, estoque, data_reposicao)
+        cursor.execute("""
+            INSERT INTO produtos (
+                codigo,
+                descricao,
+                categoria,
+                fornecedor,
+                valor_unitario,
+                imagem,
+                estoque,
+                data_reposicao
+            )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
-                        """, (
-                            codigo, 
-                            descricao, 
-                            categoria, 
-                            fornecedor, 
-                            valor_unitario, 
-                            nome_imagem, 
-                            0, 
-                            data
-                            ))
-            
-            produto_id = cursor.fetchone()["id"]
-            conn.commit()
-            conn.close()
+        """, (
+            codigo,
+            descricao,
+            categoria,
+            fornecedor,
+            valor_unitario,
+            nome_imagem,
+            0,
+            data
+        ))
 
-            # cria estoque inicial no local padrão
-            criar_estoque_inicial_local(produto_id, estoque, "Estoque Local")
-            st.success("✅ Produto cadastrado com sucesso!")
-            st.toast("Cadastro concluído", icon="✅")
+        produto_id = cursor.fetchone()["id"]
+        conn.commit()
+        conn.close()
+
+        criar_estoque_inicial_local(produto_id, estoque, "Estoque Local")
+
+        st.success("✅ Produto cadastrado com sucesso!")
+        st.toast("Cadastro concluído", icon="✅")
 
     except psycopg.IntegrityError:
-        try:
-            conn.rollback()
-            conn.close()
-        except:
-            pass
-            st.error("Já existe um produto cadastrado com esse código. Utilize um código diferente.")
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except:
+                pass
+        if nome_imagem:
+            try:
+                remover_imagem(nome_imagem)
+            except Exception:
+                pass
+
+        st.error("Já existe um produto cadastrado com esse código. Utilize um código diferente.")
 
     except Exception as e:
-        try:
-            conn.close()
-        except:
-            pass
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
+        if nome_imagem:
+            try:
+                remover_imagem(nome_imagem)
+            except Exception:
+                pass
+            
         st.error(f"Erro ao cadastrar produto: {e}")

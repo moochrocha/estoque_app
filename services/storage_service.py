@@ -10,7 +10,7 @@ SUPABASE_BUCKET = st.secrets["supabase"]["bucket"]
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def upload_imagem_produto(arquivo, pasta="produtos"):
+def upload_imagem_produto(arquivo, pasta="produtos_imagens"):
     """
     Faz upload da imagem para o Supabase Storage
     e retorna apenas o path salvo no bucket.
@@ -28,7 +28,7 @@ def upload_imagem_produto(arquivo, pasta="produtos"):
     arquivo.seek(0)
     conteudo = arquivo.read()
 
-    supabase.storage.from_(SUPABASE_BUCKET).upload(
+    resposta = supabase.storage.from_(SUPABASE_BUCKET).upload(
         path=caminho_arquivo,
         file=conteudo,
         file_options={
@@ -37,9 +37,13 @@ def upload_imagem_produto(arquivo, pasta="produtos"):
         }
     )
 
+    if not resposta:
+        raise Exception("Upload da imagem não retornou do Supabase.")
+    
+
     return caminho_arquivo
 
-def get_ulr_publica_imagem(caminho_arquivo):
+def get_url_publica_imagem(caminho_arquivo):
     if not caminho_arquivo:
         return None
     
@@ -57,4 +61,4 @@ def remover_imagem(caminho_arquivo):
     if not caminho_arquivo:
         return
     
-    supabase.storage_(SUPABASE_BUCKET).remove([caminho_arquivo])
+    supabase.storage.from_(SUPABASE_BUCKET).remove([caminho_arquivo])
