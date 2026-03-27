@@ -32,7 +32,7 @@ def require_login():
 
 def render_sidebar_logout():
     with st.sidebar:
-        st.write(f"Usuário: {st.session_state.get('auth_user', '-')}")
+        #st.write(f"Usuário: {st.session_state.get('auth_user', '-')}")
         if st.button("Sair", use_container_width=True):
             logout_user()
             st.rerun()

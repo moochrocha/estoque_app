@@ -2,3 +2,18 @@
 # 🔐 SEGURANÇA
 # ------------------------
 .streamlit/secrets.toml
+
+# Banco local legado
+estoque.db
+
+# imagens
+images/
+
+# SO
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd

@@ -36,7 +36,7 @@ st.write("Aplicação para gerenciamento de estoque para e-commerce.")
 
 with st.sidebar:
     st.success("Selecione uma página")
-    st.write(f"Usuário: {st.session_state.get('auth_user', '-')}")
+    #st.write(f"Usuário: {st.session_state.get('auth_user', '-')}")
     if st.button("Sair", use_container_width=True):
         logout_user()
         st.rerun()

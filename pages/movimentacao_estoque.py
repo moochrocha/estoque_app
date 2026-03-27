@@ -2,7 +2,7 @@ import streamlit as st
 import time
 from datetime import date
 from database.connection import get_connection
-from services.estoque_service import recalcular_estoque_total, get_estoques_por_produto
+from services.estoque_service import get_estoques_por_produto, recalcular_estoque_total
 from services.auth import require_login, render_sidebar_logout
 
 st.set_page_config(
@@ -10,6 +10,72 @@ st.set_page_config(
     page_icon="📦",
     layout="wide"
 )
+
+@st.cache_data(ttl=60)
+def carregar_produtos():
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, codigo, descricao, estoque
+            FROM produtos
+            ORDER BY codigo
+        """)
+        return cursor.fetchall()
+    finally:
+        conn.close()
+
+
+@st.cache_data(ttl=60)
+def carregar_locais():
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, nome, ativo
+            FROM locais_estoque
+            WHERE ativo = TRUE
+            ORDER BY nome
+        """)
+        return cursor.fetchall()
+    finally:
+        conn.close()
+
+
+@st.cache_data(ttl=30)
+def carregar_estoques_produto(produto_id):
+    return get_estoques_por_produto(produto_id)
+
+
+@st.cache_data(ttl=60)
+def carregar_historico_movimentacoes():
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT
+                m.id,
+                m.produto_id,
+                p.codigo,
+                m.tipo,
+                m.quantidade,
+                m.data,
+                m.observacoes
+            FROM movimentacoes m
+            JOIN produtos p ON p.id = m.produto_id
+            ORDER BY m.data DESC, m.id DESC
+        """)
+        return cursor.fetchall()
+    finally:
+        conn.close()
+
+
+def limpar_cache_tela():
+    carregar_produtos.clear()
+    carregar_locais.clear()
+    carregar_estoques_produto.clear()
+    carregar_historico_movimentacoes.clear()
+
 
 # -----
 # LOGIN
@@ -49,16 +115,9 @@ div[data-testid="stVerticalBlock"] > div:has(div[data-baseweb="select"]) {
 # --------------
 # CARREGAR DADOS
 # --------------
-conn = get_connection()
-cursor = conn.cursor()
-
-cursor.execute("SELECT id, codigo, estoque FROM produtos ORDER BY codigo")
-produtos = cursor.fetchall()
-
-cursor.execute("SELECT id, nome FROM locais_estoque WHERE ativo = TRUE ORDER BY nome")
-locais = cursor.fetchall()
-
-conn.close()
+with st.spinner("Carregando produtos e locais..."):
+    produtos = carregar_produtos()
+    locais = carregar_locais()
 
 # ---------------------
 # VALIDAÇÃO SEM PRODUTO
@@ -93,7 +152,7 @@ with col_top2:
 # ----------------
 # SALDO DO PRODUTO
 # ----------------
-estoques = get_estoques_por_produto(produto_id)
+estoques = carregar_estoques_produto(produto_id)
 total = sum(e["quantidade"] for e in estoques)
 
 st.metric(
@@ -163,135 +222,137 @@ with st.form("movimentacao_estoque"):
 # ---------------------
 if registrar:
 
-    conn = get_connection()
-    cursor = conn.cursor()
+    with st.spinner("Registrando movimentação..."):
+        conn = get_connection()
+        cursor = conn.cursor()
 
-    local_origem_id = lista_locais[local_origem_nome] if local_origem_nome else None
-    local_destino_id = lista_locais[local_destino_nome] if local_destino_nome else None
+        local_origem_id = lista_locais[local_origem_nome] if local_origem_nome else None
+        local_destino_id = lista_locais[local_destino_nome] if local_destino_nome else None
 
-    if observacao.strip():
-        observacao_final = f"{motivo} - {observacao.strip()}"
-    else:
-        observacao_final = motivo
-    
-    try:
-
-        if tipo == "Entrada":
-            cursor.execute("""
-                INSERT INTO estoque_locais (produto_id, local_id, quantidade)
-                VALUES (%s, %s, 0)
-                ON CONFLICT (produto_id, local_id) DO NOTHING
-                           """, (produto_id, local_destino_id))
-
-            cursor.execute("""
-                UPDATE estoque_locais
-                SET quantidade = quantidade + %s
-                WHERE produto_id = %s AND local_id = %s
-                           """, (quantidade, produto_id, local_destino_id))
-            tipo_db = "entrada"
-            
-        elif tipo == "Saída":
-            cursor.execute("""
-                SELECT quantidade
-                FROM estoque_locais
-                WHERE produto_id = %s AND local_id = %s
-                           """, (produto_id, local_origem_id))
-            
-            saldo = cursor.fetchone()
-            saldo_atual = saldo["quantidade"] if saldo else 0
-
-            if quantidade > saldo_atual:
-                conn.close()
-                st.error("Quantidade maior que o estoque disponível no local selecionado.")
-                st.stop()
-
-            cursor.execute("""
-                UPDATE estoque_locais
-                SET quantidade = quantidade - %s
-                WHERE produto_id = %s AND local_id = %s
-                           """, (quantidade, produto_id, local_origem_id))
-            tipo_db = "saida"
-
-        # transfêrencia
+        if observacao.strip():
+            observacao_final = f"{motivo} - {observacao.strip()}"
         else:
-            if local_origem_id == local_destino_id:
-                conn.close()
-                st.error("Origem e destino não podem ser iguais.")
-                st.stop()
-
-            cursor.execute("""
-                SELECT quantidade
-                FROM estoque_locais
-                WHERE produto_id = %s AND local_id = %s
-                           """, (produto_id, local_origem_id))
-            
-            saldo = cursor.fetchone()
-            saldo_atual = saldo["quantidade"] if saldo else 0
-
-            if quantidade > saldo_atual:
-                conn.close()
-                st.error("Quantidade maior que o estoque disponível no local de origem.")
-                st.stop()
-
-            cursor.execute("""
-                INSERT INTO estoque_locais (produto_id, local_id, quantidade)
-                VALUES (%s, %s, 0)
-                ON CONFLICT (produto_id, local_id) DO NOTHING
-                           """, (produto_id, local_destino_id))
-            # saída da origem
-            cursor.execute("""
-                UPDATE estoque_locais
-                SET quantidade = quantidade - %s
-                WHERE produto_id = %s AND local_id = %s
-                           """, (quantidade, produto_id, local_origem_id))
-            
-            # entrada no destino
-            cursor.execute("""
-                UPDATE estoque_locais
-                SET quantidade = quantidade + %s
-                WHERE produto_id = %s AND local_id = %s
-                           """, (quantidade, produto_id, local_destino_id))
-            
-            tipo_db = "transferencia"
-
-        cursor.execute("""
-            INSERT INTO movimentacoes
-            (produto_id, tipo, quantidade, data, observacoes, local_origem_id, local_destino_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-                       """, (
-                           produto_id,
-                           tipo_db,
-                           quantidade,
-                           data_mov,
-                           observacao_final,
-                           local_origem_id,
-                           local_destino_id
-                       ))
+            observacao_final = motivo
         
-        conn.commit()
-        conn.close()
-
-        recalcular_estoque_total(produto_id)
-
-        if tipo_db == "entrada":
-            st.success(f"✅ Entrada registrada: +{quantidade} unidades em '{local_destino_nome}'")
-            st.toast("Operação concluída", icon="✅")
-
-        elif tipo_db == "saida":
-            st.success(f"✅ Saída registrada: -{quantidade} unidades de '{local_origem_nome}'")
-            st.toast("Operação concluída", icon="✅")
-
-        elif tipo_db == "transferencia":
-            st.success(
-                f"🔁 Transferência realizada: {quantidade} unidades de '{local_origem_nome}' → '{local_destino_nome}'"
-            )
-            st.toast("Operação concluída", icon="✅")
-
-        time.sleep(0.5)
-        st.rerun()
-
-    finally:
         try:
+
+            if tipo == "Entrada":
+                cursor.execute("""
+                    INSERT INTO estoque_locais (produto_id, local_id, quantidade)
+                    VALUES (%s, %s, 0)
+                    ON CONFLICT (produto_id, local_id) DO NOTHING
+                            """, (produto_id, local_destino_id))
+
+                cursor.execute("""
+                    UPDATE estoque_locais
+                    SET quantidade = quantidade + %s
+                    WHERE produto_id = %s AND local_id = %s
+                            """, (quantidade, produto_id, local_destino_id))
+                tipo_db = "entrada"
+                
+            elif tipo == "Saída":
+                cursor.execute("""
+                    SELECT quantidade
+                    FROM estoque_locais
+                    WHERE produto_id = %s AND local_id = %s
+                            """, (produto_id, local_origem_id))
+                
+                saldo = cursor.fetchone()
+                saldo_atual = saldo["quantidade"] if saldo else 0
+
+                if quantidade > saldo_atual:
+                    conn.close()
+                    st.error("Quantidade maior que o estoque disponível no local selecionado.")
+                    st.stop()
+
+                cursor.execute("""
+                    UPDATE estoque_locais
+                    SET quantidade = quantidade - %s
+                    WHERE produto_id = %s AND local_id = %s
+                            """, (quantidade, produto_id, local_origem_id))
+                tipo_db = "saida"
+
+            # transfêrencia
+            else:
+                if local_origem_id == local_destino_id:
+                    conn.close()
+                    st.error("Origem e destino não podem ser iguais.")
+                    st.stop()
+
+                cursor.execute("""
+                    SELECT quantidade
+                    FROM estoque_locais
+                    WHERE produto_id = %s AND local_id = %s
+                            """, (produto_id, local_origem_id))
+                
+                saldo = cursor.fetchone()
+                saldo_atual = saldo["quantidade"] if saldo else 0
+
+                if quantidade > saldo_atual:
+                    conn.close()
+                    st.error("Quantidade maior que o estoque disponível no local de origem.")
+                    st.stop()
+
+                cursor.execute("""
+                    INSERT INTO estoque_locais (produto_id, local_id, quantidade)
+                    VALUES (%s, %s, 0)
+                    ON CONFLICT (produto_id, local_id) DO NOTHING
+                            """, (produto_id, local_destino_id))
+                # saída da origem
+                cursor.execute("""
+                    UPDATE estoque_locais
+                    SET quantidade = quantidade - %s
+                    WHERE produto_id = %s AND local_id = %s
+                            """, (quantidade, produto_id, local_origem_id))
+                
+                # entrada no destino
+                cursor.execute("""
+                    UPDATE estoque_locais
+                    SET quantidade = quantidade + %s
+                    WHERE produto_id = %s AND local_id = %s
+                            """, (quantidade, produto_id, local_destino_id))
+                
+                tipo_db = "transferencia"
+
+            cursor.execute("""
+                INSERT INTO movimentacoes
+                (produto_id, tipo, quantidade, data, observacoes, local_origem_id, local_destino_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """, (
+                            produto_id,
+                            tipo_db,
+                            quantidade,
+                            data_mov,
+                            observacao_final,
+                            local_origem_id,
+                            local_destino_id
+                        ))
+            
+            conn.commit()
             conn.close()
-        except:
-            pass
+
+            recalcular_estoque_total(produto_id)
+            limpar_cache_tela()
+
+            if tipo_db == "entrada":
+                st.success(f"✅ Entrada registrada: +{quantidade} unidades em '{local_destino_nome}'")
+                st.toast("Operação concluída", icon="✅")
+
+            elif tipo_db == "saida":
+                st.success(f"✅ Saída registrada: -{quantidade} unidades de '{local_origem_nome}'")
+                st.toast("Operação concluída", icon="✅")
+
+            elif tipo_db == "transferencia":
+                st.success(
+                    f"🔁 Transferência realizada: {quantidade} unidades de '{local_origem_nome}' → '{local_destino_nome}'"
+                )
+                st.toast("Operação concluída", icon="✅")
+
+            time.sleep(0.5)
+            st.rerun()
+
+        finally:
+            try:
+                conn.close()
+            except:
+                pass

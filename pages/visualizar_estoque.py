@@ -4,8 +4,8 @@ import unicodedata
 import streamlit as st
 import psycopg
 import pandas as pd
+
 from database.connection import get_connection
-from services.estoque_service import get_estoques_por_produto
 from services.auth import require_login, render_sidebar_logout
 from services.storage_service import (
     get_url_publica_imagem,
@@ -33,47 +33,6 @@ st.title("📦 Estoque de Produtos")
 def formatar_moeda(valor):
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-@st.cache_data(ttl=60)
-def carregar_produtos():
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT
-                id,
-                imagem,
-                codigo,
-                descricao,
-                categoria,
-                fornecedor,
-                valor_unitario,
-                estoque,
-                data_reposicao
-            FROM produtos
-            ORDER BY id
-        """)
-
-        dados = cursor.fetchall()
-
-        df_local = pd.DataFrame(dados)
-        return df_local
-    finally:
-        conn.close()
-
-    if not df_local.empty:
-        df_local["id"] = pd.to_numeric(df_local["id"], errors="coerce")
-        df_local["valor_unitario"] = pd.to_numeric(df_local["valor_unitario"], errors="coerce").fillna(0)
-        df_local["estoque"] = pd.to_numeric(df_local["estoque"], errors="coerce").fillna(0)
-
-        df_local["descricao"] = df_local["descricao"].fillna("").astype(str)
-        df_local["codigo"] = df_local["codigo"].fillna("").astype(str)
-        df_local["categoria"] = df_local["categoria"].fillna("").astype(str)
-        df_local["fornecedor"] = df_local["fornecedor"].fillna("").astype(str)
-        df_local["imagem"] = df_local["imagem"].fillna("").astype(str)
-
-    return df_local
-
 def normalizar_texto(texto):
     return " ".join(texto.strip().split())
 
@@ -94,6 +53,73 @@ MAPA_LOCAIS = {
     "Mercado Livre Full": "ML FULL ⚡",
     "Amazon FBA": "AMZ FBA"
 }
+
+@st.cache_data(ttl=60)
+def carregar_produtos():
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT
+                id,
+                imagem,
+                codigo,
+                descricao,
+                categoria,
+                fornecedor,
+                valor_unitario,
+                estoque,
+                data_reposicao
+            FROM produtos
+            ORDER BY id DESC
+        """)
+        dados = cursor.fetchall()
+        df_local = pd.DataFrame(dados)
+
+        if df_local.empty:
+            return df_local
+
+        df_local["id"] = pd.to_numeric(df_local["id"], errors="coerce")
+        df_local["valor_unitario"] = pd.to_numeric(df_local["valor_unitario"], errors="coerce").fillna(0)
+        df_local["estoque"] = pd.to_numeric(df_local["estoque"], errors="coerce").fillna(0)
+
+        df_local["descricao"] = df_local["descricao"].fillna("").astype(str)
+        df_local["codigo"] = df_local["codigo"].fillna("").astype(str)
+        df_local["categoria"] = df_local["categoria"].fillna("").astype(str)
+        df_local["fornecedor"] = df_local["fornecedor"].fillna("").astype(str)
+        df_local["imagem"] = df_local["imagem"].fillna("").astype(str)
+
+        return df_local
+    finally:
+        conn.close()
+
+@st.cache_data(ttl=60)
+def carregar_estoques_locais():
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT
+                el.produto_id,
+                le.nome AS local_nome,
+                el.quantidade
+            FROM estoque_locais el
+            JOIN locais_estoque le
+                ON le.id = el.local_id
+            WHERE le.ativo = TRUE
+        """)
+        return cursor.fetchall()
+    finally:
+        conn.close()
+
+def montar_estoques_por_produto(lista_estoques):
+    estoques_por_produto = {}
+
+    for item in lista_estoques:
+        produto_id = int(item["produto_id"])
+        estoques_por_produto.setdefault(produto_id, []).append(item)
+
+    return estoques_por_produto
 
 # -----------------------
 # CSS
@@ -120,6 +146,9 @@ st.markdown("""
     font-weight: 700;
     margin-top: 10px;
     margin-bottom: 10px;
+    min-height: 56px;
+    display: flex;
+    align-items: flex-start;
 }
 
 .texto-card {
@@ -141,7 +170,7 @@ st.markdown("""
     color: #ef4444;
     font-weight: 700;
 }
-            
+
 .image-container {
     width: 100%;
     aspect-ratio: 1 / 1;
@@ -159,6 +188,27 @@ st.markdown("""
     max-height: 100%;
     object-fit: contain;
 }
+
+.info-bloco {
+    min-height: 92px;
+}
+
+.locais-bloco {
+    min-height: 88px;
+}
+
+.valores-bloco {
+    min-height: 88px;
+}
+
+.data-bloco {
+    min-height: 28px;
+    margin-bottom: 12px;
+}
+
+div[data-testid="stButton"] > button {
+    min-height: 42px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -174,12 +224,9 @@ if "produto_excluir_id" not in st.session_state:
 # ---------------
 # CARREGAR DADOS
 # ---------------
-df = carregar_produtos()
-
-if not df.empty:
-    df["id"] = pd.to_numeric(df["id"], errors="coerce")
-    df["valor_unitario"] = pd.to_numeric(df["valor_unitario"], errors="coerce").fillna(0)
-    df["estoque"] = pd.to_numeric(df["estoque"], errors="coerce").fillna(0)
+with st.spinner("Carregando produtos..."):
+    df = carregar_produtos()
+    estoques_por_produto = montar_estoques_por_produto(carregar_estoques_locais())
 
 # -------
 # FILTROS
@@ -257,7 +304,8 @@ else:
         with colunas[idx % 3]:
             with st.container(border=True):
 
-                estoques_locais = get_estoques_por_produto(int(row["id"]))
+                produto_id = int(row["id"])
+                estoques_locais = estoques_por_produto.get(produto_id, [])
 
                 if pd.notnull(row["imagem"]) and row["imagem"]:
                     url_imagem = get_url_publica_imagem(row["imagem"])
@@ -269,8 +317,9 @@ else:
                                 <img src="{url_imagem}">
                             </div>
                             """,
-                            unsafe_allow_html=True)
-                    else:   
+                            unsafe_allow_html=True
+                        )
+                    else:
                         st.markdown('<div class="img-placeholder">Imagem indisponível</div>', unsafe_allow_html=True)
                 else:
                     st.markdown(
@@ -281,15 +330,6 @@ else:
                         """,
                         unsafe_allow_html=True
                     )
-
-                st.markdown(
-                    f'<div class="titulo-produto">{row["descricao"]}</div>',
-                    unsafe_allow_html=True
-                )
-
-                st.markdown(f'<div class="texto-card"><b>Código:</b> {row["codigo"]}</div>', unsafe_allow_html=True)
-                st.markdown(f'<div class="texto-card"><b>Categoria:</b> {row["categoria"]}</div>', unsafe_allow_html=True)
-                st.markdown(f'<div class="texto-card"><b>Fornecedor:</b> {row["fornecedor"]}</div>', unsafe_allow_html=True)
 
                 estoque = int(row["estoque"]) if pd.notnull(row["estoque"]) else 0
 
@@ -304,7 +344,19 @@ else:
                     texto_estoque = f"Estoque disponível ({estoque})"
 
                 st.markdown(
-                    f'<div class="texto-card"><b>Estoque total:</b> <span class="{classe_estoque}">{texto_estoque}</span></div>',
+                    f'<div class="titulo-produto">{row["descricao"]}</div>',
+                    unsafe_allow_html=True
+                )
+
+                st.markdown(
+                    f"""
+                    <div class="info-bloco">
+                        <div class="texto-card"><b>Código:</b> {row["codigo"]}</div>
+                        <div class="texto-card"><b>Categoria:</b> {row["categoria"]}</div>
+                        <div class="texto-card"><b>Fornecedor:</b> {row["fornecedor"]}</div>
+                        <div class="texto-card"><b>Estoque total:</b> <span class="{classe_estoque}">{texto_estoque}</span></div>
+                    </div>
+                    """,
                     unsafe_allow_html=True
                 )
 
@@ -313,28 +365,31 @@ else:
                     key=lambda x: ORDEM_LOCAIS.index(x["local_nome"]) if x["local_nome"] in ORDEM_LOCAIS else 999
                 )
 
+                linhas_locais = ""
                 for e in estoques_locais_ordenados:
                     nome_formatado = MAPA_LOCAIS.get(e["local_nome"], e["local_nome"])
-                    st.markdown(
-                        f'<div class="texto-card">• <b>{nome_formatado}:</b> {e["quantidade"]}</div>',
-                        unsafe_allow_html=True
-                    )
+                    linhas_locais += f'<div class="texto-card">• <b>{nome_formatado}:</b> {e["quantidade"]}</div>'
+
+                st.markdown(
+                    f'<div class="locais-bloco">{linhas_locais}</div>',
+                    unsafe_allow_html=True
+                )
 
                 valor_unitario = float(row["valor_unitario"]) if pd.notnull(row["valor_unitario"]) else 0.0
                 valor_total_item = valor_unitario * estoque
 
                 st.markdown(
-                    f'<div class="texto-card"><b>Valor unitário:</b> {formatar_moeda(valor_unitario)}</div>',
+                    f"""
+                    <div class="valores-bloco">
+                        <div class="texto-card"><b>Valor unitário:</b> {formatar_moeda(valor_unitario)}</div>
+                        <div class="texto-card"><b>Valor total em estoque:</b> {formatar_moeda(valor_total_item)}</div>
+                    </div>
+                    """,
                     unsafe_allow_html=True
                 )
 
                 st.markdown(
-                    f'<div class="texto-card"><b>Valor total em estoque:</b> {formatar_moeda(valor_total_item)}</div>',
-                    unsafe_allow_html=True
-                )
-
-                st.markdown(
-                    f'<div class="texto-card"><b>Última reposição:</b> {row["data_reposicao"]}</div>',
+                    f'<div class="data-bloco texto-card"><b>Última reposição:</b> {row["data_reposicao"]}</div>',
                     unsafe_allow_html=True
                 )
 
@@ -482,6 +537,8 @@ if produto_editar_id is not None:
                     produto_editar_id
                 ))
                 conn.commit()
+                carregar_produtos.clear()
+                carregar_estoques_locais.clear()
 
                 st.success("Produto atualizado com sucesso!")
                 st.session_state["produto_editar_id"] = None
@@ -543,6 +600,9 @@ if produto_excluir_id is not None:
 
                 conn.commit()
                 conn.close()
+
+                carregar_produtos.clear()
+                carregar_estoques_locais.clear()
 
                 st.success("Produto excluído com sucesso!")
                 st.session_state["produto_excluir_id"] = None
