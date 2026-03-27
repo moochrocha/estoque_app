@@ -24,7 +24,7 @@ if not is_authenticated():
             st.success("Login realizado com sucesso!")
             st.rerun()
         else:
-            st.erro("Usuário ou senha inválidos")
+            st.error("Usuário ou senha inválidos")
 
     st.stop()
 

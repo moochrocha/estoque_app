@@ -12,6 +12,7 @@ click==8.3.1
 colorama==0.4.6
 cryptography==46.0.5
 deprecation==2.1.0
+extra-streamlit-components==0.1.81
 fsspec==2026.2.0
 gitdb==4.0.12
 GitPython==3.1.46
